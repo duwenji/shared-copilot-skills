@@ -11,7 +11,7 @@ Use semantic versioning per skill.
 
 Every release must include:
 
-1. `skills/ebook-build/CHANGELOG.md` update
+1. `ebook-build/CHANGELOG.md` update
 2. Validation summary
 3. Migration notes for MAJOR and MINOR updates
 

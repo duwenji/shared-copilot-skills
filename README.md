@@ -6,11 +6,11 @@ This repository is intended to be consumed from business repositories via Git su
 
 ## Repository layout
 
-- `skills/<skill-name>/SKILL.md` : Skill definition and bundled assets
-- `skills/<skill-name>/scripts/` : Reusable automation scripts
-- `skills/<skill-name>/assets/` : Shared assets
-- `skills/<skill-name>/docs/` : Skill operation and validation docs
-- `skills/<skill-name>/CHANGELOG.md` : Per-skill release notes
+- `<skill-name>/SKILL.md` : Skill definition and bundled assets
+- `<skill-name>/scripts/` : Reusable automation scripts
+- `<skill-name>/assets/` : Shared assets
+- `<skill-name>/docs/` : Skill operation and validation docs
+- `<skill-name>/CHANGELOG.md` : Per-skill release notes
 - `templates/<skill-name>/` : Consumer-side template files (repo-specific config)
 - `docs/OPERATIONS.md` : Tagging, release, and update policy
 
@@ -21,8 +21,8 @@ This repository is intended to be consumed from business repositories via Git su
 ## Consumer integration (Git submodule)
 
 ```bash
-git submodule add https://github.com/<org>/shared-copilot-skills.git .github/skills/ebook-build
-git commit -m "chore: add ebook-build submodule"
+git submodule add https://github.com/<org>/shared-copilot-skills.git .github/skills
+git commit -m "chore: add shared skills submodule"
 ```
 
 After clone:
@@ -34,9 +34,9 @@ git submodule update --init --recursive
 Update to latest remote main (consumer controlled):
 
 ```bash
-git submodule update --remote --merge .github/skills/ebook-build
-git add .github/skills/ebook-build
-git commit -m "chore: update ebook-build skill"
+git submodule update --remote --merge .github/skills
+git add .github/skills
+git commit -m "chore: update shared skills submodule"
 ```
 
 ## Scope boundary

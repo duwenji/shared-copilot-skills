@@ -138,7 +138,7 @@ function Get-EpubChapterTitle {
         [Parameter(Mandatory=$true)] $ChapterEntry
     )
 
-    return Get-NumberedDisplayTitle -Name $ChapterEntry.Directory.Name
+    return Get-PlainDisplayTitle -Name $ChapterEntry.Directory.Name
 }
 
 function Get-EpubSectionTitle {
@@ -146,7 +146,7 @@ function Get-EpubSectionTitle {
         [Parameter(Mandatory=$true)] [System.IO.FileInfo]$ChapterFile
     )
 
-    return Get-NumberedDisplayTitle -Name $ChapterFile.Name
+    return Get-PlainDisplayTitle -Name $ChapterFile.Name
 }
 
 function New-AnchorId {
@@ -496,17 +496,17 @@ function New-ReadmeTocLines {
 
     if (Test-Path $CoverPath) {
         $coverItem = Get-Item $CoverPath
-        $coverTitle = Get-NumberedDisplayTitle -Name $coverItem.Name
+        $coverTitle = Get-PlainDisplayTitle -Name $coverItem.Name
         $lines += "- [$coverTitle](./$($coverItem.Name))"
     }
 
     foreach ($chapter in $ChapterEntries) {
         $chapterName = $chapter.Directory.Name
-        $chapterTitle = Get-NumberedDisplayTitle -Name $chapterName
+        $chapterTitle = Get-PlainDisplayTitle -Name $chapterName
         $lines += "- [$chapterTitle](./$chapterName/)"
 
         foreach ($chapterFile in $chapter.Files) {
-            $fileTitle = Get-NumberedDisplayTitle -Name $chapterFile.Name
+            $fileTitle = Get-PlainDisplayTitle -Name $chapterFile.Name
             $lines += "  - [$fileTitle](./$chapterName/$($chapterFile.Name))"
         }
     }

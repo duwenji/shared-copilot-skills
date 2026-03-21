@@ -353,6 +353,38 @@ function Get-SectionBodyLines {
     return @($bodyLines.ToArray())
 }
 
+function Get-CoverBodyLines {
+    param(
+        [Parameter(Mandatory=$true)] [string]$Path,
+        [Parameter(Mandatory=$true)] [hashtable]$LinkMap
+    )
+
+    $sourceLines = Get-Content -Path $Path -Encoding UTF8
+    $bodyLines = New-Object 'System.Collections.Generic.List[string]'
+    $insideFence = $false
+
+    foreach ($line in $sourceLines) {
+        if ($line -match '^\s*(`{3,}|~{3,})') {
+            $insideFence = -not $insideFence
+            $bodyLines.Add($line)
+            continue
+        }
+
+        # Cover の下位見出しは TOC 汚染を避けるため段落化する。
+        if (-not $insideFence -and $line -match '^\s*#{2,6}\s+(?<title>.+)$') {
+            $line = "**$($Matches['title'])**"
+        }
+
+        if (-not $insideFence) {
+            $line = Rewrite-MarkdownLinks -Line $line -SourcePath $Path -LinkMap $LinkMap
+        }
+
+        $bodyLines.Add($line)
+    }
+
+    return @($bodyLines.ToArray())
+}
+
 function New-BookManuscript {
     param(
         [Parameter(Mandatory=$true)] [string]$RootPath,
@@ -366,7 +398,7 @@ function New-BookManuscript {
 
     if (Test-Path $CoverPath) {
         $coverHeadingAssigned = $false
-        foreach ($coverLine in (Get-Content -Path $CoverPath -Encoding UTF8)) {
+        foreach ($coverLine in (Get-CoverBodyLines -Path $CoverPath -LinkMap $linkMap)) {
             $resolvedCoverLine = Rewrite-MarkdownLinks -Line $coverLine -SourcePath $CoverPath -LinkMap $linkMap
             if (-not $coverHeadingAssigned -and $resolvedCoverLine -match '^\s*#\s+.+$') {
                 $resolvedCoverLine = "$resolvedCoverLine {#$coverAnchorId}"

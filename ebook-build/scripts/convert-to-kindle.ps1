@@ -794,8 +794,8 @@ function Main {
     $ebookConvert = Get-Command ebook-convert -ErrorAction SilentlyContinue
 
     Convert-ToEpub -ManuscriptPath $manuscriptPath -EffectiveMetadataFile $effectiveMetadataFile -StyleFile $styleFile -EpubOutput $epubOutput
+    Add-PageListToEpub -EpubPath $epubOutput
     Convert-ToAzw3 -EpubOutput $epubOutput -Azw3Output $azw3Output -EbookConvert $ebookConvert
-        Add-PageListToEpub -EpubPath $epubOutput
     Convert-ToMobi -EpubOutput $epubOutput -MobiOutput $mobiOutput -EbookConvert $ebookConvert
 
     # ============================================

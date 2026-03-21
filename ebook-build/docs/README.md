@@ -63,6 +63,14 @@ After each build, verify:
 
 Focus on TOC integrity, heading hierarchy, internal links, and code block rendering.
 
+## Reader-first page-list guidance
+
+- `enablePageList: true` generates page-list entries from heading anchors first, which improves practical navigation in readers.
+- Build order applies page-list to EPUB before AZW3/MOBI conversion, so output formats stay aligned.
+- Recommended operation:
+  - Draft iterations (speed-first): set `enablePageList` to `false`
+  - Release candidates (reader UX): set `enablePageList` to `true`
+
 ## Troubleshooting
 
 ### Pandoc not found

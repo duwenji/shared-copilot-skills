@@ -42,6 +42,9 @@ The runner creates an isolated temporary workspace:
 ## Page-List Behavior
 
 - Default behavior is controlled by `enablePageList`.
+- When enabled, page-list targets are generated from heading anchors (`h1`-`h3`) first to improve reader navigation quality.
+- If no heading anchors are found in a section, id-based fallback is used with noise filtering.
+- Page-list injection runs after EPUB generation and before AZW3/MOBI conversion so all formats inherit the same navigation.
 - If `enablePageList: true` and `add-pagelist-functions.ps1` is missing, the runner logs a warning and continues with page-list disabled.
 
 ## Format Behavior

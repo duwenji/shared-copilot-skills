@@ -30,6 +30,115 @@ function Get-RelativeEpubHref {
     return [System.Uri]::UnescapeDataString($baseUri.MakeRelativeUri($targetUri).ToString())
 }
 
+function Convert-HtmlToPlainText {
+    param([AllowNull()] [string]$Html)
+
+    if ([string]::IsNullOrWhiteSpace($Html)) {
+        return ''
+    }
+
+    $text = [regex]::Replace($Html, '<[^>]+>', ' ')
+    $text = [System.Net.WebUtility]::HtmlDecode($text)
+    $text = [regex]::Replace($text, '\s+', ' ').Trim()
+    return $text
+}
+
+function Test-IgnoredAnchorId {
+    param([string]$AnchorId)
+
+    if ([string]::IsNullOrWhiteSpace($AnchorId)) {
+        return $true
+    }
+
+    return $AnchorId -match '^(fn|footnote|note|nav|toc|id_\d+-fn|id_\d+-note)'
+}
+
+function Get-HeadingTargetsFromXhtml {
+    param([Parameter(Mandatory=$true)] [string]$Content)
+
+    $results = @()
+
+    # Pandoc frequently puts the anchor id on <section> and the visible title in the first heading.
+    $sectionPattern = '<section[^>]*id=[''\"]([^''\">]+)[''\"][^>]*>'
+    $sectionMatches = [regex]::Matches($Content, $sectionPattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    foreach ($sectionMatch in $sectionMatches) {
+        $anchorId = $sectionMatch.Groups[1].Value
+        if (Test-IgnoredAnchorId -AnchorId $anchorId) {
+            continue
+        }
+
+        $snippetLength = [Math]::Min(800, $Content.Length - $sectionMatch.Index)
+        $snippet = $Content.Substring($sectionMatch.Index, $snippetLength)
+        $headingMatch = [regex]::Match($snippet, '<h([1-3])[^>]*>(.*?)</h\1>', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase -bor [System.Text.RegularExpressions.RegexOptions]::Singleline)
+        if (-not $headingMatch.Success) {
+            continue
+        }
+
+        $title = Convert-HtmlToPlainText -Html $headingMatch.Groups[2].Value
+        if ([string]::IsNullOrWhiteSpace($title)) {
+            continue
+        }
+
+        $results += @{
+            AnchorId = $anchorId
+            Title = $title
+        }
+    }
+
+    if ($results.Count -gt 0) {
+        return $results
+    }
+
+    $headingPattern = '<h([1-3])([^>]*)>(.*?)</h\1>'
+    $matches = [regex]::Matches($Content, $headingPattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase -bor [System.Text.RegularExpressions.RegexOptions]::Singleline)
+
+    foreach ($match in $matches) {
+        $attrs = $match.Groups[2].Value
+        $innerHtml = $match.Groups[3].Value
+        $idMatch = [regex]::Match($attrs, 'id=[''\"]([^''\">]+)[''\"]', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        if (-not $idMatch.Success) {
+            continue
+        }
+
+        $anchorId = $idMatch.Groups[1].Value
+        if (Test-IgnoredAnchorId -AnchorId $anchorId) {
+            continue
+        }
+
+        $title = Convert-HtmlToPlainText -Html $innerHtml
+        if ([string]::IsNullOrWhiteSpace($title)) {
+            continue
+        }
+
+        $results += @{
+            AnchorId = $anchorId
+            Title = $title
+        }
+    }
+
+    return $results
+}
+
+function Get-FallbackTargetsFromXhtml {
+    param([Parameter(Mandatory=$true)] [string]$Content)
+
+    $results = @()
+    $matches = [regex]::Matches($Content, 'id=[''\"]([^''\">]+)[''\"]')
+    foreach ($match in $matches) {
+        $anchorId = $match.Groups[1].Value
+        if (Test-IgnoredAnchorId -AnchorId $anchorId) {
+            continue
+        }
+
+        $results += @{
+            AnchorId = $anchorId
+            Title = "Section"
+        }
+    }
+
+    return $results
+}
+
 function Get-PageLocationFromExtractedEpub {
     param(
         [Parameter(Mandatory=$true)] [string]$ExtractedRoot,
@@ -47,25 +156,37 @@ function Get-PageLocationFromExtractedEpub {
     Write-Host "  ℹ️  XHTMLファイル: $($xhtmlFiles.Count)個 in $packageRoot" -ForegroundColor Gray
 
     $pageLinks = @()
+    $seen = New-Object 'System.Collections.Generic.HashSet[string]'
     $pageNum = 1
+    $headingTargetCount = 0
+    $fallbackTargetCount = 0
 
     foreach ($xhtmlFile in $xhtmlFiles) {
         $content = Get-Content -Path $xhtmlFile.FullName -Raw -Encoding UTF8
-        $matches = [regex]::Matches($content, 'id=[''\"]([^''\">]+)[''\"]')
         $relativeHref = Get-RelativeEpubHref -BaseDirectory $navDirectory -TargetPath $xhtmlFile.FullName
 
-        foreach ($match in $matches) {
-            $anchorId = $match.Groups[1].Value
-            if (-not [string]::IsNullOrWhiteSpace($anchorId)) {
+        $targets = Get-HeadingTargetsFromXhtml -Content $content
+        if ($targets.Count -eq 0) {
+            $targets = Get-FallbackTargetsFromXhtml -Content $content
+            $fallbackTargetCount += $targets.Count
+        } else {
+            $headingTargetCount += $targets.Count
+        }
+
+        foreach ($target in $targets) {
+            $href = "$relativeHref#$($target.AnchorId)"
+            if ($seen.Add($href)) {
                 $pageLinks += @{
-                    Href = "$relativeHref#$anchorId"
+                    Href = $href
                     Number = $pageNum
+                    Title = $target.Title
                 }
                 $pageNum++
             }
         }
     }
 
+    Write-Host "  ℹ️  見出しアンカー: $headingTargetCount / fallback: $fallbackTargetCount" -ForegroundColor Gray
     Write-Host "  ℹ️  抽出ポイント: $($pageLinks.Count)個" -ForegroundColor Gray
     return $pageLinks
 }
@@ -128,7 +249,11 @@ function Add-PageListToEpub {
         }
 
         $pageListXml = "<nav epub:type=`"page-list`"><h2>ページリスト</h2><ol>`n"
-        $pageLinks | ForEach-Object { $pageListXml += "        <li><a href=`"$($_.Href)`">$($_.Number)</a></li>`n" }
+        $pageLinks | ForEach-Object {
+            $title = if ([string]::IsNullOrWhiteSpace($_.Title)) { "Section" } else { $_.Title }
+            $safeTitle = [System.Security.SecurityElement]::Escape($title)
+            $pageListXml += "        <li><a href=`"$($_.Href)`">$($_.Number). $safeTitle</a></li>`n"
+        }
         $pageListXml += "    </ol></nav>"
 
         $updatedNav = $navContent -replace '(</body>)(?!.*</body>)', "$pageListXml`n`$1"

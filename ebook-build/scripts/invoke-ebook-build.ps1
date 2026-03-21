@@ -234,6 +234,11 @@ foreach ($directory in $chapterDirs) {
     Copy-Item -Path $directory.FullName -Destination (Join-Path $stageBookRoot $directory.Name) -Recurse -Force
 }
 
+$imagesPath = Join-Path $contentRoot 'images'
+if (Test-Path $imagesPath) {
+    Copy-Item -Path $imagesPath -Destination (Join-Path $stageBookRoot 'images') -Recurse -Force
+}
+
 $coverPath = Join-Path $contentRoot $CoverFile
 if (Test-Path $coverPath) {
     Copy-Item -Path $coverPath -Destination (Join-Path $stageBookRoot $CoverFile) -Force

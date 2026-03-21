@@ -21,7 +21,7 @@ It is designed for:
 2. Prepares an isolated build workspace
 3. Reuses kindle conversion scripts and templates
 4. Builds EPUB and optional AZW3/MOBI
-5. Optionally injects EPUB page-list navigation
+5. Optionally injects reader-focused page-list navigation
 6. Copies resulting artifacts to the target output directory
 
 ## Requirements
@@ -40,7 +40,7 @@ Primary script: ./scripts/invoke-ebook-build.ps1
 | outputDir | No | sourceRoot/ebook-output | Destination for final ebook artifacts |
 | projectName | No | folder name of sourceRoot | Base filename for outputs |
 | formats | No | [epub, azw3, mobi] | Output formats to keep |
-| enablePageList | No | true | Keep page-list injection step enabled |
+| enablePageList | No | true | Inject heading-based page-list navigation. Set false for draft-speed builds |
 | chapterDirPattern | No | ^\\d{2}- | Chapter directory pattern |
 | chapterFilePattern | No | ^\\d{2}-.*\\.md$ | Chapter file pattern |
 | coverFile | No | 00-COVER.md | Optional cover filename |

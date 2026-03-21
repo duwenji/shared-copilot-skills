@@ -30,6 +30,8 @@
 ## EPUB Optional Feature
 
 - [ ] Page-list step runs when `enablePageList` is true and helper script exists
+- [ ] Page-list entries are heading-focused and readable (not an exhaustive id dump)
+- [ ] Page-list links are reflected consistently in EPUB, AZW3, and MOBI outputs
 - [ ] If helper script is missing, warning is logged and build still succeeds
 
 ## Compatibility

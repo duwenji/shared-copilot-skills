@@ -1,0 +1,54 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://spa-quiz-app.example.com/schemas/question.json",
+  "title": "Quiz Question Schema",
+  "description": "スキーププリケーション用のクイズ問題の形式定義",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "number",
+      "description": "問題の一意な識別子（クイズセット内で連番）",
+      "minimum": 1
+    },
+    "question": {
+      "type": "string",
+      "description": "問題文",
+      "minLength": 1
+    },
+    "options": {
+      "type": "array",
+      "description": "選択肢の配列（4つの選択肢が必須）",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": ["A", "B", "C", "D"],
+            "description": "選択肢の識別子"
+          },
+          "text": {
+            "type": "string",
+            "description": "選択肢のテキスト",
+            "minLength": 1
+          }
+        },
+        "required": ["id", "text"],
+        "additionalProperties": false
+      }
+    },
+    "correctAnswer": {
+      "type": "string",
+      "enum": ["A", "B", "C", "D"],
+      "description": "正解の選択肢ID"
+    },
+    "explanation": {
+      "type": "string",
+      "description": "正解の解説（詳細な説明）",
+      "minLength": 1
+    }
+  },
+  "required": ["id", "question", "options", "correctAnswer", "explanation"],
+  "additionalProperties": false
+}

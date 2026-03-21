@@ -1,0 +1,19 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://spa-quiz-app.example.com/schemas/question-set.json",
+  "title": "Quiz Question Set Schema",
+  "description": "クイズセット内の問題一覧の形式定義",
+  "type": "object",
+  "properties": {
+    "questions": {
+      "type": "array",
+      "description": "問題の配列",
+      "minItems": 1,
+      "items": {
+        "$ref": "question-schema.json"
+      }
+    }
+  },
+  "required": ["questions"],
+  "additionalProperties": false
+}

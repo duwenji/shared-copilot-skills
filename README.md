@@ -10,6 +10,7 @@ This repository is intended to be consumed from business repositories via Git su
 - `<skill-name>/scripts/` : Reusable automation scripts
 - `<skill-name>/assets/` : Shared assets
 - `<skill-name>/docs/` : Skill operation and validation docs
+- `<skill-name>/prompts/` : Reusable generation prompts (optional)
 - `<skill-name>/CHANGELOG.md` : Per-skill release notes
 - `templates/<skill-name>/` : Consumer-side template files (repo-specific config)
 - `docs/OPERATIONS.md` : Tagging, release, and update policy
@@ -17,6 +18,7 @@ This repository is intended to be consumed from business repositories via Git su
 ## Included skill
 
 - `ebook-build`
+- `quiz-generator`
 
 ## Consumer integration (Git submodule)
 
@@ -44,4 +46,6 @@ git commit -m "chore: update shared skills submodule"
 - Shared in this repository: scripts, assets, skill docs, and skill definition
 - Kept in each consumer repository: build config and metadata files
 
-See `templates/ebook-build/` for sample consumer files.
+See `templates/ebook-build/` and `templates/quiz-generator/` for sample consumer files.
+
+For nested submodule mount (`.github/skills/shared-copilot-skills`), keep path-sensitive settings in consumer wrappers under `.github/skills-config/<skill-name>/`.

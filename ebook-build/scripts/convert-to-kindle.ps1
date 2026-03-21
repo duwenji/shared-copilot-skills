@@ -631,10 +631,8 @@ function Main {
         exit 1
     }
 
-    # 走査結果と同じソースから README の目次も更新
-    $readmePath = Join-Path $projectRoot 'README.md'
+    # README の自動 TOC 更新は行わない
     $coverPath = Join-Path $projectRoot '00-COVER.md'
-    Update-ReadmeToc -ReadmePath $readmePath -ChapterEntries $chapterEntries -CoverPath $coverPath
 
     $manuscriptPath = New-BookManuscript -RootPath $projectRoot -ChapterEntries $chapterEntries -CoverPath $coverPath
 

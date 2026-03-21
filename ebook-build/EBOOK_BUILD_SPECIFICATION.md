@@ -2,7 +2,7 @@
 
 ## Goal
 
-Provide a reusable, agent-friendly, self-contained ebook build workflow for markdown repositories that follow numbered chapter conventions.
+Provide a reusable, agent-friendly, self-contained EPUB build workflow for markdown repositories that follow numbered chapter conventions.
 
 ## Source Discovery
 
@@ -15,9 +15,11 @@ Given `sourceRoot`:
 ## Chapter Contract
 
 - Chapter directories: `chapterDirPattern` (default `^\\d{2}-`)
-- Section markdown files: `chapterFilePattern` (default `^\\d{2}-.*\\.md$`)
-- Cover file: `coverFile` (default `00-COVER.md`, optional)
+- Section markdown files: `chapterFilePattern` (default `^\\d{2}-.*\\.md$`) located directly under each chapter directory
+- Cover file: `coverFile` (default `00-COVER.md`, optional) and treated as outside the chapter sequence
 - Root `README.md`: optional, copied into staging when present so converter-side TOC updates remain safe
+- Nested section subdirectories are out of scope for this workflow
+- Display titles are derived from folder and file slugs, with the leading numeric prefix preserved in EPUB headings
 
 ## Staging Contract
 
@@ -35,25 +37,13 @@ The runner creates an isolated temporary workspace:
 4. Stage converter scripts, metadata, and stylesheet.
 5. Patch the staged converter for non-interactive execution.
 6. Run the staged converter.
-7. Copy requested artifacts to `outputDir` using `projectName` as the filename base.
-8. Fail if no requested artifacts were copied.
+7. Copy the generated EPUB to `outputDir` using `projectName` as the filename base.
+8. Fail if the EPUB artifact was not produced.
 9. Clean temporary workspace unless `preserveTemp` is enabled.
-
-## Page-List Behavior
-
-- Default behavior is controlled by `enablePageList`.
-- When enabled, page-list targets are generated from heading anchors (`h1`-`h3`) first to improve reader navigation quality.
-- If no heading anchors are found in a section, id-based fallback is used with noise filtering.
-- Page-list injection runs after EPUB generation and before AZW3/MOBI conversion so all formats inherit the same navigation.
-- If `enablePageList: true` and `add-pagelist-functions.ps1` is missing, the runner logs a warning and continues with page-list disabled.
 
 ## Format Behavior
 
 - `epub`: expected if Pandoc is available
-- `azw3`: expected when `ebook-convert` is available
-- `mobi`: expected when `ebook-convert` is available
-
-Missing optional formats produce warnings, not hard failures.
 
 ## Error Strategy
 
@@ -64,12 +54,7 @@ Hard fail:
 - core conversion script missing
 - no chapter content found
 - staged converter exits with non-zero status
-- no requested artifacts copied to output directory
-
-Soft warnings:
-
-- optional output format not produced
-- page-list requested but helper script missing
+- EPUB artifact not produced by the converter
 
 ## Reuse Scope
 

@@ -7,7 +7,6 @@ param(
     [string]$MetadataFile,
     [string]$StyleFile,
     [string[]]$Formats,
-    [bool]$EnablePageList = $true,
     [string]$ChapterDirPattern = '^\d{2}-',
     [string]$ChapterFilePattern = '^\d{2}-.*\.md$',
     [string]$CoverFile = '00-COVER.md',
@@ -154,7 +153,6 @@ $KindleTemplateDir = Resolve-Value -Name 'KindleTemplateDir' -CurrentValue $Kind
 $ChapterDirPattern = Resolve-Value -Name 'ChapterDirPattern' -CurrentValue $ChapterDirPattern -DefaultValue '^\d{2}-' -Config $config -Bound $scriptBound
 $ChapterFilePattern = Resolve-Value -Name 'ChapterFilePattern' -CurrentValue $ChapterFilePattern -DefaultValue '^\d{2}-.*\.md$' -Config $config -Bound $scriptBound
 $CoverFile = Resolve-Value -Name 'CoverFile' -CurrentValue $CoverFile -DefaultValue '00-COVER.md' -Config $config -Bound $scriptBound
-$EnablePageList = [bool](Resolve-Value -Name 'EnablePageList' -CurrentValue $EnablePageList -DefaultValue $true -Config $config -Bound $scriptBound)
 
 if (-not $Formats -or $Formats.Count -eq 0) {
     if ($scriptBound.ContainsKey('Formats')) {
@@ -162,10 +160,14 @@ if (-not $Formats -or $Formats.Count -eq 0) {
     } elseif ($config.ContainsKey('formats') -and $null -ne $config['formats']) {
         $Formats = @($config['formats'])
     } else {
-        $Formats = @('epub', 'azw3', 'mobi')
+        $Formats = @('epub')
     }
 }
 $Formats = @($Formats | ForEach-Object { $_.ToString().ToLowerInvariant() } | Select-Object -Unique)
+$unsupportedFormats = @($Formats | Where-Object { $_ -ne 'epub' })
+if ($unsupportedFormats.Count -gt 0) {
+    throw "Unsupported format requested. This workflow only supports epub. formats=$($Formats -join ',')"
+}
 $SourceRoot = Resolve-ConfiguredPath -PathValue $SourceRoot -RepoRoot $repoRoot
 $KindleTemplateDir = Resolve-ConfiguredPath -PathValue $KindleTemplateDir -RepoRoot $repoRoot
 
@@ -198,13 +200,6 @@ Ensure-Path -Path $KindleTemplateDir -Label 'Kindle template directory'
 Ensure-Path -Path (Join-Path $KindleTemplateDir 'convert-to-kindle.ps1') -Label 'convert-to-kindle.ps1'
 Ensure-Path -Path $MetadataFile -Label 'metadata file'
 Ensure-Path -Path $StyleFile -Label 'style file'
-
-$pageListScriptPath = Join-Path $KindleTemplateDir 'add-pagelist-functions.ps1'
-$pageListScriptAvailable = Test-Path $pageListScriptPath
-if ($EnablePageList -and -not $pageListScriptAvailable) {
-    Write-Warning "EnablePageList=true but add-pagelist-functions.ps1 was not found in $KindleTemplateDir. Continuing with page-list disabled."
-    $EnablePageList = $false
-}
 
 $contentRoot = Resolve-ContentRoot -Root $resolvedSourceRoot -DirPattern $ChapterDirPattern
 $chapterDirs = @(Get-ChildItem -Path $contentRoot -Directory | Where-Object { $_.Name -match $ChapterDirPattern } | Sort-Object Name)
@@ -250,9 +245,6 @@ if (Test-Path $readmePath) {
 }
 
 Copy-Item -Path (Join-Path $KindleTemplateDir 'convert-to-kindle.ps1') -Destination (Join-Path $stageKindle 'convert-to-kindle.ps1') -Force
-if ($pageListScriptAvailable) {
-    Copy-Item -Path $pageListScriptPath -Destination (Join-Path $stageKindle 'add-pagelist-functions.ps1') -Force
-}
 Copy-Item -Path $MetadataFile -Destination (Join-Path $stageKindle 'metadata.yaml') -Force
 Copy-Item -Path $StyleFile -Destination (Join-Path $stageKindle 'style.css') -Force
 
@@ -261,10 +253,6 @@ $convertRaw = Get-Content -Path $stageConvertScript -Raw -Encoding UTF8
 
 $convertRaw = $convertRaw -replace '\$response = Read-Host', "`$response = 'n'"
 $convertRaw = $convertRaw -replace 'Invoke-Item \$outputDir', '# output auto-open disabled by ebook-build skill runner'
-
-if (-not $EnablePageList) {
-    $convertRaw = $convertRaw -replace '(?m)^\s*Add-PageListToEpub -EpubPath \$epubOutput\s*$', '    # Add-PageListToEpub disabled by runner'
-}
 
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllText($stageConvertScript, $convertRaw, $utf8NoBom)
@@ -281,23 +269,14 @@ try {
 }
 
 Write-Host 'Collecting artifacts...' -ForegroundColor Cyan
-$copiedCount = 0
-foreach ($format in $Formats) {
-    $produced = Get-ChildItem -Path $stageOutput -Filter "*.$format" -File -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($null -eq $produced) {
-        Write-Warning "Requested format not found: $format"
-        continue
-    }
-
-    $destinationPath = Join-Path $OutputDir ("$ProjectName.$format")
-    Copy-Item -Path $produced.FullName -Destination $destinationPath -Force
-    Write-Host "Generated: $destinationPath" -ForegroundColor Green
-    $copiedCount += 1
+$producedEpub = Get-ChildItem -Path $stageOutput -Filter '*.epub' -File -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($null -eq $producedEpub) {
+    throw 'EPUB artifact was not produced by the converter.'
 }
 
-if ($copiedCount -eq 0) {
-    throw 'No requested artifacts were copied to the output directory.'
-}
+$destinationPath = Join-Path $OutputDir ("$ProjectName.epub")
+Copy-Item -Path $producedEpub.FullName -Destination $destinationPath -Force
+Write-Host "Generated: $destinationPath" -ForegroundColor Green
 
 if ($PreserveTemp) {
     Write-Host "Temporary workspace preserved: $tempRoot" -ForegroundColor Yellow

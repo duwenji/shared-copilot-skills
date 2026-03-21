@@ -1,12 +1,12 @@
 # ============================================
-# Clean Architecture を Kindle 形式に自動変換
+# 番号付き Markdown コンテンツを EPUB に変換
 # PowerShell スクリプト
 # ============================================
 # 
 # 使用方法:
 #   1. このスクリプトを実行
-#   2. EPUB、MOBI、AZW3形式に自動変換
-#   3. output フォルダに生成
+#   2. EPUB を生成
+#   3. output フォルダに配置
 #
 
 # 設定
@@ -21,9 +21,7 @@ $Script:Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
 # ============================================
 # タイトル解決ユーティリティ
-#   ファイル名スラグ → 表示タイトル変換
-#   README 目次用（番号付き）/ EPUB 見出し用（番号付き）/ 書籍本文用（番号なし）
-#   の 3 用途を下記の関数群で使い分ける
+#   フォルダ名/ファイル名スラグを章節タイトルの唯一の決定源にする
 # ============================================
 
 function Convert-SlugToTitle {
@@ -80,91 +78,30 @@ function Convert-SlugToTitle {
     return ($words -join ' ')
 }
 
-function Get-MarkdownH1Title {
+function Get-PlainDisplayTitle {
     param(
-        [Parameter(Mandatory=$true)] [string]$Path
+        [Parameter(Mandatory=$true)] [string]$Name
     )
-
-    if (-not (Test-Path $Path)) {
-        return $null
-    }
-
-    $headingLine = Get-Content -Path $Path -Encoding UTF8 |
-        Where-Object { $_ -match '^\s*#\s+(.+)$' } |
-        Select-Object -First 1
-
-    if ($headingLine) {
-        return ($headingLine -replace '^\s*#\s+', '').Trim()
-    }
-
-    return $null
-}
-
-function Get-NumberedDisplayTitle {
-    param(
-        [Parameter(Mandatory=$true)] [string]$Name,
-        [string]$MarkdownPath
-    )
-
-    $prefix = ""
-    if ($Name -match '^(\d{2})-') {
-        $prefix = "$($Matches[1]). "
-    }
 
     $title = Convert-SlugToTitle -Name $Name
-    if (([string]::IsNullOrWhiteSpace($title) -or $title.Length -lt 3) -and $MarkdownPath) {
-        $h1Title = Get-MarkdownH1Title -Path $MarkdownPath
-        if (-not [string]::IsNullOrWhiteSpace($h1Title)) {
-            $title = $h1Title
-        }
-    }
-
     if ([string]::IsNullOrWhiteSpace($title)) {
         $title = [System.IO.Path]::GetFileNameWithoutExtension($Name)
     }
 
-    return "$prefix$title"
-}
-
-function Remove-LeadingNumberMarker {
-    param(
-        [AllowNull()] [string]$Title
-    )
-
-    if ($null -eq $Title) {
-        return $null
-    }
-
-    $normalizedTitle = $Title.Trim()
-    if ([string]::IsNullOrWhiteSpace($normalizedTitle)) {
-        return $normalizedTitle
-    }
-
-    $normalizedTitle = $normalizedTitle -replace '^\s*\d{1,2}\s*(?:[\.\-:：]\s*|\)\s+)', ''
-    return $normalizedTitle.Trim()
-}
-
-function Get-BookDisplayTitle {
-    param(
-        [Parameter(Mandatory=$true)] [string]$Name,
-        [string]$MarkdownPath
-    )
-
-    $title = $null
-
-    if ($MarkdownPath) {
-        $title = Remove-LeadingNumberMarker -Title (Get-MarkdownH1Title -Path $MarkdownPath)
-    }
-
-    if ([string]::IsNullOrWhiteSpace($title)) {
-        $title = Remove-LeadingNumberMarker -Title (Convert-SlugToTitle -Name $Name)
-    }
-
-    if ([string]::IsNullOrWhiteSpace($title)) {
-        $title = Remove-LeadingNumberMarker -Title ([System.IO.Path]::GetFileNameWithoutExtension($Name))
-    }
-
     return $title
+}
+
+function Get-NumberedDisplayTitle {
+    param(
+        [Parameter(Mandatory=$true)] [string]$Name
+    )
+
+    $prefix = ''
+    if ($Name -match '^(\d{2})-') {
+        $prefix = "$($Matches[1]). "
+    }
+
+    return "$prefix$(Get-PlainDisplayTitle -Name $Name)"
 }
 
 function Get-ChapterReadmePath {
@@ -185,8 +122,7 @@ function Get-BookChapterTitle {
         [Parameter(Mandatory=$true)] $ChapterEntry
     )
 
-    $chapterReadmePath = Get-ChapterReadmePath -ChapterDirectory $ChapterEntry.Directory
-    return Get-BookDisplayTitle -Name $ChapterEntry.Directory.Name -MarkdownPath $chapterReadmePath
+    return Get-PlainDisplayTitle -Name $ChapterEntry.Directory.Name
 }
 
 function Get-BookSectionTitle {
@@ -194,35 +130,23 @@ function Get-BookSectionTitle {
         [Parameter(Mandatory=$true)] [System.IO.FileInfo]$ChapterFile
     )
 
-    return Get-BookDisplayTitle -Name $ChapterFile.Name -MarkdownPath $ChapterFile.FullName
+    return Get-PlainDisplayTitle -Name $ChapterFile.Name
 }
 
-# EPUB 原稿用: ファイル名の接頭番号を保持した章タイトルを返す
 function Get-EpubChapterTitle {
     param(
         [Parameter(Mandatory=$true)] $ChapterEntry
     )
 
-    $prefix = ''
-    if ($ChapterEntry.Directory.Name -match '^(\d{2})-') {
-        $prefix = "$($Matches[1]). "
-    }
-    $cleanTitle = Get-BookChapterTitle -ChapterEntry $ChapterEntry
-    return "$prefix$cleanTitle"
+    return Get-NumberedDisplayTitle -Name $ChapterEntry.Directory.Name
 }
 
-# EPUB 原稿用: ファイル名の接頭番号を保持した節タイトルを返す
 function Get-EpubSectionTitle {
     param(
         [Parameter(Mandatory=$true)] [System.IO.FileInfo]$ChapterFile
     )
 
-    $prefix = ''
-    if ($ChapterFile.Name -match '^(\d{2})-') {
-        $prefix = "$($Matches[1]). "
-    }
-    $cleanTitle = Get-BookSectionTitle -ChapterFile $ChapterFile
-    return "$prefix$cleanTitle"
+    return Get-NumberedDisplayTitle -Name $ChapterFile.Name
 }
 
 function New-AnchorId {
@@ -540,7 +464,7 @@ function New-ReadmeTocLines {
 
     if (Test-Path $CoverPath) {
         $coverItem = Get-Item $CoverPath
-        $coverTitle = Get-NumberedDisplayTitle -Name $coverItem.Name -MarkdownPath $coverItem.FullName
+        $coverTitle = Get-NumberedDisplayTitle -Name $coverItem.Name
         $lines += "- [$coverTitle](./$($coverItem.Name))"
     }
 
@@ -550,7 +474,7 @@ function New-ReadmeTocLines {
         $lines += "- [$chapterTitle](./$chapterName/)"
 
         foreach ($chapterFile in $chapter.Files) {
-            $fileTitle = Get-NumberedDisplayTitle -Name $chapterFile.Name -MarkdownPath $chapterFile.FullName
+            $fileTitle = Get-NumberedDisplayTitle -Name $chapterFile.Name
             $lines += "  - [$fileTitle](./$chapterName/$($chapterFile.Name))"
         }
     }
@@ -655,78 +579,10 @@ function Convert-ToEpub {
     Write-Host ""
 }
 
-function Convert-ToAzw3 {
-    param(
-        [Parameter(Mandatory=$true)] [string]$EpubOutput,
-        [Parameter(Mandatory=$true)] [string]$Azw3Output,
-        [Parameter(Mandatory=$true)] $EbookConvert
-    )
-
-    Write-Host "🔄 AZW3 形式に変換中..." -ForegroundColor Cyan
-
-    if ($EbookConvert) {
-        try {
-            & ebook-convert $EpubOutput $Azw3Output `
-                --language ja `
-                --margin-left 0 `
-                --margin-right 0 `
-                --margin-top 0 `
-                --margin-bottom 0
-
-            if ($LASTEXITCODE -eq 0) {
-                Write-Host "✅ AZW3 作成成功: $Azw3Output" -ForegroundColor Green
-            } else {
-                Write-Host "❌ AZW3 作成失敗 (エラーコード: $LASTEXITCODE)" -ForegroundColor Red
-            }
-        } catch {
-            Write-Host "⚠️  AZW3 作成エラー: $_" -ForegroundColor Yellow
-        }
-    } else {
-        Write-Host "⚠️  ebook-convert が見つかりません (Calibre をインストールすれば AZW3 変換可)" -ForegroundColor Yellow
-        Write-Host "   https://calibre-ebook.com/download" -ForegroundColor Cyan
-    }
-
-    Write-Host ""
-}
-
-function Convert-ToMobi {
-    param(
-        [Parameter(Mandatory=$true)] [string]$EpubOutput,
-        [Parameter(Mandatory=$true)] [string]$MobiOutput,
-        [Parameter(Mandatory=$true)] $EbookConvert
-    )
-
-    Write-Host "🔄 MOBI 形式に変換中..." -ForegroundColor Cyan
-
-    if ($EbookConvert) {
-        try {
-            & ebook-convert $EpubOutput $MobiOutput `
-                --language ja
-
-            if ($LASTEXITCODE -eq 0) {
-                Write-Host "✅ MOBI 作成成功: $MobiOutput" -ForegroundColor Green
-            } else {
-                Write-Host "⚠️  MOBI 作成スキップ (エラーコード: $LASTEXITCODE)" -ForegroundColor Yellow
-            }
-        } catch {
-            Write-Host "⚠️  MOBI 作成エラー: $_" -ForegroundColor Yellow
-        }
-    } else {
-        Write-Host "⚠️  MOBI 作成スキップ (Calibre が必要)" -ForegroundColor Yellow
-    }
-
-    Write-Host ""
-}
-
 # ============================================
 # エントリポイント
 # ============================================
 
-# pageList 機能を読み込む
-$pageListFunctionsPath = Join-Path $scriptDir "add-pagelist-functions.ps1"
-if (Test-Path $pageListFunctionsPath) {
-    . $pageListFunctionsPath
-}
 function Main {
     # 出力フォルダを作成
     if (-not (Test-Path $outputDir)) {
@@ -789,14 +645,8 @@ function Main {
     # 動的にプロジェクト名を取得して出力ファイル名を生成
     $projectName = (Split-Path -Leaf $projectRoot).ToLowerInvariant()
     $epubOutput = Join-Path $outputDir "$projectName.epub"
-    $azw3Output = Join-Path $outputDir "$projectName.azw3"
-    $mobiOutput = Join-Path $outputDir "$projectName.mobi"
-    $ebookConvert = Get-Command ebook-convert -ErrorAction SilentlyContinue
 
     Convert-ToEpub -ManuscriptPath $manuscriptPath -EffectiveMetadataFile $effectiveMetadataFile -StyleFile $styleFile -EpubOutput $epubOutput
-    Add-PageListToEpub -EpubPath $epubOutput
-    Convert-ToAzw3 -EpubOutput $epubOutput -Azw3Output $azw3Output -EbookConvert $ebookConvert
-    Convert-ToMobi -EpubOutput $epubOutput -MobiOutput $mobiOutput -EbookConvert $ebookConvert
 
     # ============================================
     # 完了報告
@@ -808,11 +658,7 @@ function Main {
 
     Write-Host ""
     Write-Host "📦 生成されたファイル:" -ForegroundColor Cyan
-    $outputs = @(
-        Get-ChildItem $outputDir -Filter '*.epub' -File -ErrorAction SilentlyContinue
-        Get-ChildItem $outputDir -Filter '*.azw3' -File -ErrorAction SilentlyContinue
-        Get-ChildItem $outputDir -Filter '*.mobi' -File -ErrorAction SilentlyContinue
-    )
+    $outputs = @(Get-ChildItem $outputDir -Filter '*.epub' -File -ErrorAction SilentlyContinue)
 
     if ($outputs -and $outputs.Count -gt 0) {
         $outputs | ForEach-Object {
@@ -828,8 +674,7 @@ function Main {
     Write-Host ""
     Write-Host "📖 次のステップ:" -ForegroundColor Cyan
     Write-Host "  1. EPUB ファイルで内容確認"
-    Write-Host "  2. Kindle互換性チェック (KINDLE-COMPATIBILITY-CHECKLIST.md 参照)"
-    Write-Host "  3. AZW3 を Kindle デバイスに転送"
+    Write-Host "  2. VALIDATION_CHECKLIST.md に沿って構造確認"
     Write-Host ""
 
     # 出力フォルダをエクスプローラーで開く

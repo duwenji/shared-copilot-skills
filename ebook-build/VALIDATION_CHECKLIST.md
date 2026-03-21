@@ -9,33 +9,27 @@
 ## Artifacts
 
 - [ ] EPUB output exists
-- [ ] AZW3 output exists or a clear warning is shown
-- [ ] MOBI output exists or a clear warning is shown
 - [ ] Output filenames use `projectName` as the base name
-- [ ] At least one requested artifact is copied to output
+- [ ] Exactly one EPUB artifact is copied to output
 
 ## Structural Quality
 
 - [ ] TOC is generated
 - [ ] Internal links work
 - [ ] Heading hierarchy is readable
+- [ ] Chapter order matches numbered folders
+- [ ] Section order matches numbered files
+- [ ] Chapter and section headings display their numeric prefixes
 - [ ] Code blocks render correctly
+- [ ] EPUB navigation works without a page-list section
 
 ## Repository Integrity
 
 - [ ] Cover file is included when `00-COVER.md` exists
 - [ ] Root `README.md` remains valid after TOC refresh (when present)
-- [ ] Chapter order matches numbered folders and files
-
-## EPUB Optional Feature
-
-- [ ] Page-list step runs when `enablePageList` is true and helper script exists
-- [ ] Page-list entries are heading-focused and readable (not an exhaustive id dump)
-- [ ] Page-list links are reflected consistently in EPUB, AZW3, and MOBI outputs
-- [ ] If helper script is missing, warning is logged and build still succeeds
+- [ ] Chapter and section titles are derived from folder and file names, not markdown H1 headings
 
 ## Compatibility
 
-- [ ] Review `docs/KINDLE-COMPATIBILITY-CHECKLIST.md`
 - [ ] Preview EPUB in an EPUB reader
-- [ ] Validate AZW3/MOBI on the target Kindle environment
+- [ ] Validate EPUB in at least one reader without Kindle-specific tooling

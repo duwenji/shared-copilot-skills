@@ -30,11 +30,9 @@ ebook-output/
 ## Prerequisites
 
 - Pandoc is available in PATH
-- Calibre `ebook-convert` is available in PATH for AZW3/MOBI generation
 
 ```powershell
 pandoc --version
-ebook-convert --version
 ```
 
 ## Config ownership
@@ -58,10 +56,18 @@ If `metadataFile` is not explicitly provided, the runner checks:
 
 After each build, verify:
 
-- `./KINDLE-COMPATIBILITY-CHECKLIST.md`
 - `../VALIDATION_CHECKLIST.md`
 
-Focus on TOC integrity, heading hierarchy, internal links, and code block rendering.
+Focus on TOC integrity, heading hierarchy, internal links, chapter numbering, and code block rendering.
+
+## Chapter and section contract
+
+- Chapter directories must match `^\d{2}-`.
+- Section files must match `^\d{2}-.*\.md$` unless the consumer config intentionally widens the pattern.
+- Sections are discovered only from files directly under each chapter directory.
+- `00-COVER.md` is treated as an optional cover file outside the chapter sequence.
+- If `sourceRoot` does not contain chapter directories, the runner falls back to `sourceRoot/docs`.
+- Chapter and section display titles are derived from folder and file names, not markdown H1 headings.
 
 ## Reader-first page-list guidance
 
@@ -76,11 +82,6 @@ Focus on TOC integrity, heading hierarchy, internal links, and code block render
 ### Pandoc not found
 
 - Install Pandoc
-- Restart PowerShell
-
-### ebook-convert not found
-
-- Install Calibre
 - Restart PowerShell
 
 ### Markdown files are not detected

@@ -1,6 +1,6 @@
 ---
 name: ebook-build
-description: Build Kindle-compatible ebooks from markdown projects using PowerShell (EPUB, AZW3, MOBI). Use when generating publishable ebook files in a consumer repository that references this skill via Git submodule.
+description: Build EPUB ebooks from numbered markdown projects using PowerShell. Use when generating publishable EPUB files in a consumer repository that references this skill via Git submodule.
 license: MIT
 ---
 
@@ -8,10 +8,10 @@ license: MIT
 
 ## Overview
 
-This skill packages the Kindle build flow as a reusable workflow for multi-repository distribution.
+This skill packages a reusable EPUB build flow for multi-repository distribution.
 
 It is designed for:
-- Building ebooks from numbered markdown chapter structures
+- Building EPUB ebooks from numbered markdown chapter structures
 - Reusing the same conversion scripts across repositories
 - Consumer-side configuration with repository-specific metadata and output policy
 
@@ -19,16 +19,14 @@ It is designed for:
 
 1. Detects source content root (direct or docs/)
 2. Prepares an isolated build workspace
-3. Reuses kindle conversion scripts and templates
-4. Builds EPUB and optional AZW3/MOBI
-5. Optionally injects reader-focused page-list navigation
-6. Copies resulting artifacts to the target output directory
+3. Reuses shared conversion scripts and templates
+4. Builds EPUB from numbered markdown chapter structures
+5. Copies the resulting artifact to the target output directory
 
 ## Requirements
 
 - Windows PowerShell 5.1+
 - Pandoc installed and available in PATH
-- Calibre (ebook-convert) for AZW3/MOBI generation
 
 ## Inputs
 
@@ -39,8 +37,7 @@ Primary script: ./scripts/invoke-ebook-build.ps1
 | sourceRoot | Yes | - | Source project root or docs root containing chapter folders |
 | outputDir | No | sourceRoot/ebook-output | Destination for final ebook artifacts |
 | projectName | No | folder name of sourceRoot | Base filename for outputs |
-| formats | No | [epub, azw3, mobi] | Output formats to keep |
-| enablePageList | No | true | Inject heading-based page-list navigation. Set false for draft-speed builds |
+| formats | No | [epub] | Optional compatibility input. Only `epub` is accepted |
 | chapterDirPattern | No | ^\\d{2}- | Chapter directory pattern |
 | chapterFilePattern | No | ^\\d{2}-.*\\.md$ | Chapter file pattern |
 | coverFile | No | 00-COVER.md | Optional cover filename |
@@ -53,10 +50,8 @@ Primary script: ./scripts/invoke-ebook-build.ps1
 
 - ./scripts/invoke-ebook-build.ps1
 - ./scripts/convert-to-kindle.ps1
-- ./scripts/add-pagelist-functions.ps1
 - ./assets/style.css
 - ./docs/README.md
-- ./docs/KINDLE-COMPATIBILITY-CHECKLIST.md
 
 ## Consumer Repository Files
 
@@ -79,17 +74,16 @@ Template files are provided in the central repository under:
 
 The skill writes artifacts such as:
 - project-name.epub
-- project-name.azw3 (if ebook-convert available)
-- project-name.mobi (if ebook-convert available)
 
 ## Notes
 
 - This skill is intentionally non-interactive for agent execution.
 - It patches staged conversion scripts to disable terminal prompts.
+- Chapter and section display titles are derived from folder and file slugs, not markdown H1 headings.
 - Metadata default search order is:
   1. ./.github/skills-config/ebook-build/<project>.metadata.yaml
   2. ./.github/skills/ebook-build/configs/<project>.metadata.yaml (legacy fallback)
 - Regenerated files under `ebook-output/` are treated as reviewable build artifacts and should be included in commits when the source content, metadata, styles, or build flow changes.
 - For the operational guide, see ./docs/README.md.
 - For detailed flow and constraints, see ./EBOOK_BUILD_SPECIFICATION.md.
-- For validation criteria, see ./VALIDATION_CHECKLIST.md and ./docs/KINDLE-COMPATIBILITY-CHECKLIST.md.
+- For validation criteria, see ./VALIDATION_CHECKLIST.md.

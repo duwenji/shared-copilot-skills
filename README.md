@@ -41,6 +41,19 @@ git add .github/skills
 git commit -m "chore: update shared skills submodule"
 ```
 
+## Submodule update rule
+
+Use this repository as the single source of truth for shared skills.
+
+1. Change shared skills here.
+2. Push the shared repository first.
+3. Update each consumer repository submodule pointer after that.
+
+Do not use `.gitignore` to hide or manage `.github/skills` changes.
+
+- `.gitignore` is appropriate for generated local files.
+- Submodule version changes must be reviewed and committed as submodule pointer updates.
+
 ## Scope boundary
 
 - Shared in this repository: scripts, assets, skill docs, and skill definition

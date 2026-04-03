@@ -254,8 +254,10 @@ $convertRaw = Get-Content -Path $stageConvertScript -Raw -Encoding UTF8
 $convertRaw = $convertRaw -replace '\$response = Read-Host', "`$response = 'n'"
 $convertRaw = $convertRaw -replace 'Invoke-Item \$outputDir', '# output auto-open disabled by ebook-build skill runner'
 
-$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-[System.IO.File]::WriteAllText($stageConvertScript, $convertRaw, $utf8NoBom)
+# Windows PowerShell on GitHub Actions can misread UTF-8 without BOM after rewriting
+# the staged script. Write a UTF-8 BOM so Unicode strings parse reliably in CI.
+$utf8Bom = New-Object System.Text.UTF8Encoding($true)
+[System.IO.File]::WriteAllText($stageConvertScript, $convertRaw, $utf8Bom)
 
 Write-Host 'Running staged converter...' -ForegroundColor Cyan
 Push-Location $stageKindle

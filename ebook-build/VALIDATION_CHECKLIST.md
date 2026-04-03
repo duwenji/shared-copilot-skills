@@ -23,6 +23,13 @@
 - [ ] Code blocks render correctly
 - [ ] EPUB navigation works without a page-list section
 
+## Configuration Consistency
+
+- [ ] Consumer `*.build.json` files use forward-slash paths (`./...`)
+- [ ] Consumer metadata uses `creator` instead of legacy `author`
+- [ ] `styleFile` is omitted unless a custom stylesheet is intentionally required
+- [ ] `validate-consumer-config.ps1` passes for the target repository set
+
 ## Repository Integrity
 
 - [ ] Cover file is included when `00-COVER.md` exists

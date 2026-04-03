@@ -9,12 +9,22 @@
 #   3. output フォルダに配置
 #
 
+param(
+    [string]$projectRoot,
+    [string]$outputDir,
+    [string]$metadataFile,
+    [string]$styleFile,
+    [string]$ChapterDirPattern = '^\d{2}-',
+    [string]$ChapterFilePattern = '^\d{2}-.*\.md$',
+    [string]$CoverFile = '00-COVER.md'
+)
+
 # 設定
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$projectRoot = Split-Path -Parent $scriptDir
-$outputDir = Join-Path $scriptDir "output"
-$metadataFile = Join-Path $scriptDir "metadata.yaml"
-$styleFile = Join-Path $scriptDir "style.css"
+if (-not $projectRoot) { $projectRoot = Split-Path -Parent $scriptDir }
+if (-not $outputDir) { $outputDir = Join-Path $scriptDir "output" }
+if (-not $metadataFile) { $metadataFile = Join-Path $scriptDir "metadata.yaml" }
+if (-not $styleFile) { $styleFile = Join-Path $scriptDir "style.css" }
 
 # UTF-8 BOM なしエンコーディング（共通）
 $Script:Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
@@ -442,17 +452,19 @@ function New-BookManuscript {
 
 function Get-ChapterEntries {
     param(
-        [Parameter(Mandatory=$true)] [string]$RootPath
+        [Parameter(Mandatory=$true)] [string]$RootPath,
+        [string]$ChapterDirPattern = '^\d{2}-',
+        [string]$ChapterFilePattern = '^\d{2}-.*\.md$'
     )
 
     $chapterDirs = Get-ChildItem -Path $RootPath -Directory |
-        Where-Object { $_.Name -match '^\d{2}-' } |
+        Where-Object { $_.Name -match $ChapterDirPattern } |
         Sort-Object Name
 
     $entries = @()
     foreach ($chapterDir in $chapterDirs) {
         $chapterFiles = Get-ChildItem -Path $chapterDir.FullName -File -Filter '*.md' |
-            Where-Object { $_.Name -match '^\d{2}-.*\.md$' } |
+            Where-Object { $_.Name -match $ChapterFilePattern } |
             Sort-Object Name
 
         $entries += [PSCustomObject]@{
@@ -461,18 +473,19 @@ function Get-ChapterEntries {
         }
     }
 
-    return $entries
+    return @($entries)
 }
 
 function Get-ConversionFiles {
     param(
         [Parameter(Mandatory=$true)] [string]$RootPath,
-        [Parameter(Mandatory=$true)] [array]$ChapterEntries
+        [Parameter(Mandatory=$true)] [array]$ChapterEntries,
+        [string]$CoverFile = '00-COVER.md'
     )
 
     $conversionFiles = @()
 
-    $coverPath = Join-Path $RootPath '00-COVER.md'
+    $coverPath = Join-Path $RootPath $CoverFile
     if (Test-Path $coverPath) {
         $conversionFiles += (Resolve-Path $coverPath -ErrorAction Stop).ProviderPath
     }
@@ -623,8 +636,8 @@ function Main {
     }
 
     # フォルダ/ファイル構造から変換対象を生成
-    $chapterEntries = Get-ChapterEntries -RootPath $projectRoot
-    $files = Get-ConversionFiles -RootPath $projectRoot -ChapterEntries $chapterEntries
+    $chapterEntries = Get-ChapterEntries -RootPath $projectRoot -ChapterDirPattern $ChapterDirPattern -ChapterFilePattern $ChapterFilePattern
+    $files = Get-ConversionFiles -RootPath $projectRoot -ChapterEntries $chapterEntries -CoverFile $CoverFile
 
     if ($files.Count -eq 0) {
         Write-Host "❌ エラー: 変換対象の markdown ファイルが見つかりません" -ForegroundColor Red
@@ -632,7 +645,7 @@ function Main {
     }
 
     # README の自動 TOC 更新は行わない
-    $coverPath = Join-Path $projectRoot '00-COVER.md'
+    $coverPath = Join-Path $projectRoot $CoverFile
 
     $manuscriptPath = New-BookManuscript -RootPath $projectRoot -ChapterEntries $chapterEntries -CoverPath $coverPath
 

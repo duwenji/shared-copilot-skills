@@ -7,15 +7,17 @@ This guide explains how to use the shared `ebook-build` skill from a consumer re
 ```text
 .github/
 ├── skills/
-│   └── ebook-build/                         # Git submodule from shared-copilot-skills
-│       ├── SKILL.md
-│       ├── scripts/
-│       ├── assets/
-│       └── docs/
+│   └── shared-copilot-skills/              # Git submodule from shared-copilot-skills
+│       └── ebook-build/
+│           ├── SKILL.md
+│           ├── scripts/
+│           ├── assets/
+│           └── docs/
 └── skills-config/
     └── ebook-build/
         ├── <repo>.build.json               # Consumer-specific runtime config
-        └── <repo>.metadata.yaml            # Consumer-specific metadata
+        ├── <repo>.metadata.yaml            # Consumer-specific metadata
+        └── invoke-build.ps1                # Local wrapper that resolves repo-specific paths
 
 ebook-output/
 ```
@@ -23,8 +25,7 @@ ebook-output/
 ## Run command
 
 ```powershell
-.\.github\skills\ebook-build\scripts\invoke-ebook-build.ps1 `
-  -ConfigFile .\.github\skills-config\ebook-build\<repo>.build.json
+./.github/skills-config/ebook-build/invoke-build.ps1
 ```
 
 ## Prerequisites
@@ -38,12 +39,20 @@ pandoc --version
 ## Config ownership
 
 - Shared and versioned in submodule:
-  - `.github/skills/ebook-build/scripts/*`
-  - `.github/skills/ebook-build/assets/style.css`
-  - `.github/skills/ebook-build/docs/*`
+  - `.github/skills/shared-copilot-skills/ebook-build/scripts/*`
+  - `.github/skills/shared-copilot-skills/ebook-build/assets/style.css`
+  - `.github/skills/shared-copilot-skills/ebook-build/docs/*`
 - Owned by each consumer repository:
   - `.github/skills-config/ebook-build/<repo>.build.json`
   - `.github/skills-config/ebook-build/<repo>.metadata.yaml`
+
+## Canonical config contract
+
+- Prefer forward-slash paths in JSON config values (`./ebook-output`, `./.github/skills-config/...`).
+- Keep `styleFile` unset unless you need a custom stylesheet; the wrapper resolves the shared default safely.
+- Prefer `creator` over `author` in metadata YAML.
+- Set `toc-depth: 2` in metadata when you want stable section depth in the generated EPUB TOC.
+- For manual-style repositories that do not use numbered chapter files, use the documented flat-docs compatibility profile (`chapterDirPattern: "^docs$"`, `chapterFilePattern: "^.*\\.md$"`, `coverFile: "README.md"`).
 
 ## Metadata default lookup
 

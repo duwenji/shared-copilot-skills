@@ -4,6 +4,58 @@
 
 Provide a reusable, agent-friendly, self-contained EPUB build workflow for markdown repositories that follow numbered chapter conventions.
 
+## Canonical Consumer Config Contract
+
+Preferred JSON shape:
+
+```json
+{
+  "sourceRoot": ".",
+  "outputDir": "./ebook-output",
+  "projectName": "replace-with-project-name",
+  "metadataFile": "./.github/skills-config/ebook-build/replace-with-project-name.metadata.yaml",
+  "chapterDirPattern": "^\\d{2}-",
+  "chapterFilePattern": "^\\d{2}-.*\\.md$",
+  "coverFile": "00-COVER.md"
+}
+```
+
+Rules:
+
+- Use forward-slash path notation in consumer JSON config.
+- `styleFile` is optional and should normally be omitted so the wrapper can resolve the shared default.
+- Repositories that need a broader `chapterFilePattern` such as `^.*\\.md$` should use the documented flat-docs compatibility profile rather than an ad hoc exception.
+
+Flat-docs compatibility profile (for manual-style repos such as `spa-quiz-app`):
+
+```json
+{
+  "sourceRoot": ".",
+  "outputDir": "./ebook-output",
+  "projectName": "repo-name",
+  "metadataFile": "./.github/skills-config/ebook-build/repo-name.metadata.yaml",
+  "chapterDirPattern": "^docs$",
+  "chapterFilePattern": "^.*\\.md$",
+  "coverFile": "README.md"
+}
+```
+
+## Canonical Metadata Contract
+
+Preferred YAML keys:
+
+- `title`
+- `creator`
+- `language`
+- `rights`
+- `date`
+- `publisher`
+- `identifier`
+- `subject`
+- `toc-depth` (recommended value: `2`)
+
+`author` is treated as a legacy form and should be migrated to `creator` in consumer repositories.
+
 ## Source Discovery
 
 Given `sourceRoot`:

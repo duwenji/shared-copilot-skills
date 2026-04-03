@@ -1,10 +1,9 @@
 {
   "sourceRoot": ".",
-  "outputDir": "ebook-output",
+  "outputDir": "./ebook-output",
   "projectName": "replace-with-project-name",
   "chapterDirPattern": "^\\d{2}-",
   "chapterFilePattern": "^\\d{2}-.*\\.md$",
   "coverFile": "00-COVER.md",
-  "metadataFile": ".github/skills-config/ebook-build/replace-with-project-name.metadata.yaml",
-  "styleFile": ".github/skills/ebook-build/assets/style.css"
+  "metadataFile": "./.github/skills-config/ebook-build/replace-with-project-name.metadata.yaml"
 }

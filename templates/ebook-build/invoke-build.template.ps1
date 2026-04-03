@@ -52,6 +52,7 @@ function Get-SharedSkillRoot {
 
     $candidates = @(
         (Join-Path $RepoRoot '.github/skills/shared-copilot-skills/ebook-build'),
+        (Join-Path $RepoRoot '.github/skills/shared-skills/ebook-build'),
         (Join-Path $RepoRoot '.github/skills/ebook-build'),
         (Join-Path $RepoRoot '../shared-copilot-skills/ebook-build')
     )

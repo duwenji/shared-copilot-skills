@@ -14,8 +14,14 @@ These files are starting points for each consumer repository.
 
 1. Copy all three files to `.github/skills-config/ebook-build/` in the consumer repository.
 2. In `invoke-build.ps1`, replace `<repo-name>` with the actual project name.
-3. In `<repo>.build.json`, fill in `projectName`, `sourceRoot`, `outputDir`, and `metadataFile`.
-4. In `<repo>.metadata.yaml`, fill in title, author, and language.
+3. In `<repo>.build.json`, fill in `projectName`, `sourceRoot`, `outputDir`, and `metadataFile` using forward-slash paths (`./...`).
+4. In `<repo>.metadata.yaml`, fill in `title`, `creator`, `language`, and other book metadata.
+5. Leave `styleFile` out unless you intentionally override the shared stylesheet; the wrapper resolves the default automatically.
+6. Validate the config before release:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .github/skills/shared-copilot-skills/ebook-build/scripts/validate-consumer-config.ps1 -RepoRoot .
+```
 
 ## Run command
 

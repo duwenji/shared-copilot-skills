@@ -262,7 +262,10 @@ $utf8Bom = New-Object System.Text.UTF8Encoding($true)
 Write-Host 'Running staged converter...' -ForegroundColor Cyan
 Push-Location $stageKindle
 try {
-    & powershell -NoProfile -ExecutionPolicy Bypass -File $stageConvertScript
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $stageConvertScript `
+        -ChapterDirPattern $ChapterDirPattern `
+        -ChapterFilePattern $ChapterFilePattern `
+        -CoverFile $CoverFile
     if ($LASTEXITCODE -ne 0) {
         throw "Converter failed with exit code $LASTEXITCODE"
     }

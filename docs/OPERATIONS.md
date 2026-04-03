@@ -14,6 +14,7 @@ Every release must include:
 1. `ebook-build/CHANGELOG.md` update
 2. Validation summary
 3. Migration notes for MAJOR and MINOR updates
+4. Successful `ebook-build/scripts/validate-consumer-config.ps1` run against the impacted consumer repositories
 
 ## Branch and PR policy
 

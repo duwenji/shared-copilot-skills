@@ -43,7 +43,7 @@ Primary script: ./scripts/invoke-ebook-build.ps1
 | coverFile | No | 00-COVER.md | Optional cover filename |
 | preserveTemp | No | false | Keep temporary staging directory |
 | metadataFile | No | ./.github/skills-config/ebook-build/<project>.metadata.yaml | Override metadata file |
-| styleFile | No | ./.github/skills/ebook-build/assets/style.css | Override stylesheet file |
+| styleFile | No | auto-resolved from the shared skill root | Override stylesheet file only when you intentionally replace the shared default |
 | configFile | No | - | JSON config file path (recommended in consumer repositories) |
 
 ## Shared Files
@@ -66,8 +66,7 @@ Template files are provided in the central repository under:
 ## Quick Usage (in consumer repository)
 
 ```powershell
-./.github/skills/ebook-build/scripts/invoke-ebook-build.ps1 \
-  -ConfigFile ./.github/skills-config/ebook-build/<repo>.build.json
+./.github/skills-config/ebook-build/invoke-build.ps1
 ```
 
 ## Output
@@ -80,6 +79,8 @@ The skill writes artifacts such as:
 - This skill is intentionally non-interactive for agent execution.
 - It patches staged conversion scripts to disable terminal prompts.
 - Chapter and section display titles are derived from folder and file slugs, not markdown H1 headings.
+- Canonical consumer JSON paths use forward slashes (`./...`) for cross-environment consistency.
+- Canonical metadata uses `creator` rather than `author` and should usually include `toc-depth: 2`.
 - Metadata default search order is:
   1. ./.github/skills-config/ebook-build/<project>.metadata.yaml
   2. ./.github/skills/ebook-build/configs/<project>.metadata.yaml (legacy fallback)

@@ -22,8 +22,10 @@ This repository is intended to be consumed from business repositories via Git su
 
 ## Consumer integration (Git submodule)
 
+Canonical mount path:
+
 ```bash
-git submodule add https://github.com/<org>/shared-copilot-skills.git .github/skills/shared-skills
+git submodule add https://github.com/<org>/shared-copilot-skills.git .github/skills/shared-copilot-skills
 git commit -m "chore: add shared skills submodule"
 ```
 
@@ -38,8 +40,8 @@ git submodule update --init --recursive
 Update to latest remote main (consumer controlled):
 
 ```bash
-git submodule update --remote --merge .github/skills/shared-skills
-git add .github/skills/shared-skills
+git submodule update --remote --merge .github/skills/shared-copilot-skills
+git add .github/skills/shared-copilot-skills
 git commit -m "chore: update shared skills submodule"
 ```
 
@@ -51,7 +53,7 @@ Use this repository as the single source of truth for shared skills.
 2. Push the shared repository first.
 3. Update each consumer repository submodule pointer after that.
 
-Do not use `.gitignore` to hide or manage `.github/skills/shared-skills` changes.
+Do not use `.gitignore` to hide or manage `.github/skills/shared-copilot-skills` changes.
 
 - `.gitignore` is appropriate for generated local files.
 - Submodule version changes must be reviewed and committed as submodule pointer updates.
@@ -63,4 +65,5 @@ Do not use `.gitignore` to hide or manage `.github/skills/shared-skills` changes
 
 See `templates/ebook-build/` and `templates/quiz-generator/` for sample consumer files.
 
-For nested submodule mount (`.github/skills/shared-skills`), keep path-sensitive settings in consumer wrappers under `.github/skills-config/<skill-name>/`.
+For nested submodule mount (`.github/skills/shared-copilot-skills`), keep path-sensitive settings in consumer wrappers under `.github/skills-config/<skill-name>/`.
+Legacy `.github/skills/shared-skills` mounts remain supported by the consumer wrapper for backward compatibility.

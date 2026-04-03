@@ -687,29 +687,30 @@ function Main {
     Write-Host $separator -ForegroundColor Cyan
 
     Write-Host ""
-    Write-Host "📦 生成されたファイル:" -ForegroundColor Cyan
+    Write-Host "Generated files:" -ForegroundColor Cyan
     $outputs = @(Get-ChildItem $outputDir -Filter '*.epub' -File -ErrorAction SilentlyContinue)
 
     if ($outputs -and $outputs.Count -gt 0) {
         $outputs | ForEach-Object {
             $sizeKB = [math]::Round($_.Length / 1KB, 2)
-            Write-Host "  ✓ $($_.Name) ($sizeKB KB)" -ForegroundColor Green
+            $message = "  - {0} ({1} KB)" -f $_.Name, $sizeKB
+            Write-Host $message -ForegroundColor Green
         }
     } else {
-        Write-Host "  (出力フォルダを確認してください)" -ForegroundColor Yellow
+        Write-Host "  (Check the output folder)" -ForegroundColor Yellow
     }
 
     Write-Host ""
-    Write-Host "📂 出力フォルダ: $outputDir" -ForegroundColor Cyan
+    Write-Host "Output folder: $outputDir" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "📖 次のステップ:" -ForegroundColor Cyan
-    Write-Host "  1. EPUB ファイルで内容確認"
-    Write-Host "  2. VALIDATION_CHECKLIST.md に沿って構造確認"
+    Write-Host "Next steps:" -ForegroundColor Cyan
+    Write-Host "  1. Review the EPUB contents"
+    Write-Host "  2. Validate against VALIDATION_CHECKLIST.md"
     Write-Host ""
 
-    # 出力フォルダをエクスプローラーで開く
-    if ($outputs) {
-        Write-Host "📂 出力フォルダを開きますか? (Y/n)" -ForegroundColor Cyan
+    # Open the output folder only for interactive local runs.
+    if ($outputs -and -not $env:CI) {
+        Write-Host "Open the output folder? (Y/n)" -ForegroundColor Cyan
         $response = Read-Host
         if ($response -ne 'n' -and $response -ne 'N') {
             Invoke-Item $outputDir

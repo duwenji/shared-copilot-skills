@@ -10,6 +10,9 @@ param(
     [string]$ChapterDirPattern = '^\d{2}-',
     [string]$ChapterFilePattern = '^\d{2}-.*\.md$',
     [string]$CoverFile = '00-COVER.md',
+    [ValidateSet('off', 'auto', 'required')] [string]$MermaidMode = 'auto',
+    [ValidateSet('svg', 'png')] [string]$MermaidFormat = 'svg',
+    [bool]$FailOnMermaidError = $false,
     [switch]$PreserveTemp
 )
 
@@ -143,6 +146,262 @@ function Ensure-Path {
     }
 }
 
+function Get-TextHash {
+    param([Parameter(Mandatory=$true)] [string]$Text)
+
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($Text)
+        $hashBytes = $sha.ComputeHash($bytes)
+    } finally {
+        $sha.Dispose()
+    }
+
+    return ([System.BitConverter]::ToString($hashBytes)).Replace('-', '').ToLowerInvariant().Substring(0, 16)
+}
+
+function Get-MermaidCommandSpec {
+    $mmdc = Get-Command mmdc -ErrorAction SilentlyContinue
+    if ($mmdc) {
+        return @{
+            Command = $mmdc.Source
+            Arguments = @()
+            Label = 'mmdc'
+        }
+    }
+
+    $npx = Get-Command npx -ErrorAction SilentlyContinue
+    if ($npx) {
+        return @{
+            Command = $npx.Source
+            Arguments = @('--yes', '@mermaid-js/mermaid-cli')
+            Label = 'npx @mermaid-js/mermaid-cli'
+        }
+    }
+
+    return $null
+}
+
+function Invoke-MermaidRender {
+    param(
+        [Parameter(Mandatory=$true)] [hashtable]$CommandSpec,
+        [Parameter(Mandatory=$true)] [string]$DiagramText,
+        [Parameter(Mandatory=$true)] [string]$OutputPath,
+        [Parameter(Mandatory=$true)] [ValidateSet('svg', 'png')] [string]$Format
+    )
+
+    if (Test-Path $OutputPath) {
+        return $true
+    }
+
+    $inputPath = [System.IO.Path]::ChangeExtension($OutputPath, '.mmd')
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($inputPath, $DiagramText, $utf8NoBom)
+
+    try {
+        $renderArgs = @()
+        if ($CommandSpec.ContainsKey('Arguments') -and $null -ne $CommandSpec['Arguments']) {
+            $renderArgs += @($CommandSpec['Arguments'])
+        }
+
+        $renderArgs += @(
+            '-i', $inputPath,
+            '-o', $OutputPath,
+            '-e', $Format,
+            '-b', 'transparent'
+        )
+
+        & $CommandSpec['Command'] @renderArgs
+        return ($LASTEXITCODE -eq 0 -and (Test-Path $OutputPath))
+    } finally {
+        Remove-Item -Path $inputPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Convert-MermaidBlocksInMarkdown {
+    param(
+        [Parameter(Mandatory=$true)] [string]$Path,
+        [Parameter(Mandatory=$true)] [string]$StageBookRoot,
+        [Parameter(Mandatory=$true)] [hashtable]$CommandSpec,
+        [Parameter(Mandatory=$true)] [ValidateSet('auto', 'required')] [string]$Mode,
+        [Parameter(Mandatory=$true)] [ValidateSet('svg', 'png')] [string]$Format,
+        [bool]$FailOnError = $false
+    )
+
+    $sourceLines = Get-Content -Path $Path -Encoding UTF8
+    $resultLines = New-Object 'System.Collections.Generic.List[string]'
+    $originalMermaidLines = New-Object 'System.Collections.Generic.List[string]'
+    $mermaidBuffer = New-Object 'System.Collections.Generic.List[string]'
+
+    $imagesRoot = Join-Path $StageBookRoot 'images\mermaid'
+    New-Item -ItemType Directory -Path $imagesRoot -Force | Out-Null
+
+    $insideFence = $false
+    $fenceChar = $null
+    $fenceLength = 0
+    $insideMermaid = $false
+    $mermaidFenceChar = $null
+    $mermaidFenceLength = 0
+    $mermaidIndent = ''
+    $blockCount = 0
+    $renderedCount = 0
+    $fileChanged = $false
+
+    foreach ($line in $sourceLines) {
+        if ($insideMermaid) {
+            $originalMermaidLines.Add($line)
+
+            if ($line -match "^\s*$([regex]::Escape($mermaidFenceChar)){$mermaidFenceLength,}\s*$") {
+                $blockCount += 1
+                $diagramText = ($mermaidBuffer.ToArray() -join [Environment]::NewLine).Trim()
+                $hash = Get-TextHash -Text "$Format`n$diagramText"
+                $imageFileName = "mermaid-$hash.$Format"
+                $imagePath = Join-Path $imagesRoot $imageFileName
+                $imageMarkdownPath = "images/mermaid/$imageFileName"
+
+                $rendered = $false
+                if (-not [string]::IsNullOrWhiteSpace($diagramText)) {
+                    $rendered = Invoke-MermaidRender -CommandSpec $CommandSpec -DiagramText $diagramText -OutputPath $imagePath -Format $Format
+                }
+
+                if ($rendered) {
+                    $resultLines.Add("$mermaidIndent![Mermaid diagram]($imageMarkdownPath)")
+                    $renderedCount += 1
+                    $fileChanged = $true
+                } else {
+                    $message = "Mermaid render failed for $Path"
+                    if ($Mode -eq 'required' -or $FailOnError) {
+                        throw $message
+                    }
+
+                    Write-Warning "$message. Leaving the source block unchanged."
+                    foreach ($originalLine in $originalMermaidLines.ToArray()) {
+                        $resultLines.Add($originalLine)
+                    }
+                }
+
+                $insideMermaid = $false
+                $mermaidFenceChar = $null
+                $mermaidFenceLength = 0
+                $mermaidIndent = ''
+                $mermaidBuffer.Clear()
+                $originalMermaidLines.Clear()
+                continue
+            }
+
+            $mermaidBuffer.Add($line)
+            continue
+        }
+
+        if (-not $insideFence -and $line -match '^(?<indent>\s*)(?<marker>`{3,}|~{3,})\s*mermaid(?:\s+.*)?\s*$') {
+            $insideMermaid = $true
+            $mermaidFenceChar = $Matches['marker'].Substring(0, 1)
+            $mermaidFenceLength = $Matches['marker'].Length
+            $mermaidIndent = $Matches['indent']
+            $originalMermaidLines.Add($line)
+            $mermaidBuffer.Clear()
+            continue
+        }
+
+        if ($line -match '^\s*(?<marker>`{3,}|~{3,}).*$') {
+            $candidateMarker = $Matches['marker']
+            $candidateChar = $candidateMarker.Substring(0, 1)
+            $candidateLength = $candidateMarker.Length
+
+            if (-not $insideFence) {
+                $insideFence = $true
+                $fenceChar = $candidateChar
+                $fenceLength = $candidateLength
+            } elseif ($candidateChar -eq $fenceChar -and $candidateLength -ge $fenceLength) {
+                $insideFence = $false
+                $fenceChar = $null
+                $fenceLength = 0
+            }
+        }
+
+        $resultLines.Add($line)
+    }
+
+    if ($insideMermaid) {
+        foreach ($originalLine in $originalMermaidLines.ToArray()) {
+            $resultLines.Add($originalLine)
+        }
+    }
+
+    if ($fileChanged) {
+        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText($Path, ($resultLines.ToArray() -join [Environment]::NewLine), $utf8NoBom)
+    }
+
+    return [PSCustomObject]@{
+        Path = $Path
+        Blocks = $blockCount
+        Rendered = $renderedCount
+        Changed = $fileChanged
+    }
+}
+
+function Invoke-MermaidPreprocessing {
+    param(
+        [Parameter(Mandatory=$true)] [string]$StageBookRoot,
+        [ValidateSet('off', 'auto', 'required')] [string]$Mode = 'auto',
+        [ValidateSet('svg', 'png')] [string]$Format = 'svg',
+        [bool]$FailOnError = $false
+    )
+
+    if ($Mode -eq 'off') {
+        return
+    }
+
+    $markdownFiles = @(Get-ChildItem -Path $StageBookRoot -Recurse -File -Filter '*.md' -ErrorAction SilentlyContinue)
+    if ($markdownFiles.Count -eq 0) {
+        return
+    }
+
+    $hasMermaid = $false
+    foreach ($markdownFile in $markdownFiles) {
+        if (Select-String -Path $markdownFile.FullName -Pattern '^\s*(`{3,}|~{3,})\s*mermaid(?:\s+.*)?\s*$' -Quiet) {
+            $hasMermaid = $true
+            break
+        }
+    }
+
+    if (-not $hasMermaid) {
+        return
+    }
+
+    $commandSpec = Get-MermaidCommandSpec
+    if ($null -eq $commandSpec) {
+        $message = 'Mermaid CLI not found. Install mmdc or ensure npx is available to render Mermaid diagrams during ebook builds.'
+        if ($Mode -eq 'required' -or $FailOnError) {
+            throw $message
+        }
+
+        Write-Warning "$message Mermaid blocks will remain as source text."
+        return
+    }
+
+    Write-Host "Preprocessing Mermaid diagrams using $($commandSpec['Label'])..." -ForegroundColor Cyan
+
+    $totalBlocks = 0
+    $totalRendered = 0
+    foreach ($markdownFile in $markdownFiles) {
+        $stats = Convert-MermaidBlocksInMarkdown -Path $markdownFile.FullName -StageBookRoot $StageBookRoot -CommandSpec $commandSpec -Mode $Mode -Format $Format -FailOnError $FailOnError
+        $totalBlocks += $stats.Blocks
+        $totalRendered += $stats.Rendered
+    }
+
+    if ($totalBlocks -eq 0) {
+        return
+    }
+
+    if ($totalRendered -gt 0) {
+        Write-Host "Rendered $totalRendered Mermaid diagram(s) for EPUB output." -ForegroundColor Green
+    } elseif ($Mode -eq 'auto') {
+        Write-Warning 'Mermaid blocks were detected but could not be rendered. Leaving the source blocks unchanged.'
+    }
+}
+
 $config = Get-ConfigMap -Path $ConfigFile
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).ProviderPath
@@ -153,6 +412,25 @@ $KindleTemplateDir = Resolve-Value -Name 'KindleTemplateDir' -CurrentValue $Kind
 $ChapterDirPattern = Resolve-Value -Name 'ChapterDirPattern' -CurrentValue $ChapterDirPattern -DefaultValue '^\d{2}-' -Config $config -Bound $scriptBound
 $ChapterFilePattern = Resolve-Value -Name 'ChapterFilePattern' -CurrentValue $ChapterFilePattern -DefaultValue '^\d{2}-.*\.md$' -Config $config -Bound $scriptBound
 $CoverFile = Resolve-Value -Name 'CoverFile' -CurrentValue $CoverFile -DefaultValue '00-COVER.md' -Config $config -Bound $scriptBound
+$MermaidMode = [string](Resolve-Value -Name 'MermaidMode' -CurrentValue $MermaidMode -DefaultValue 'auto' -Config $config -Bound $scriptBound)
+$MermaidFormat = [string](Resolve-Value -Name 'MermaidFormat' -CurrentValue $MermaidFormat -DefaultValue 'svg' -Config $config -Bound $scriptBound)
+$FailOnMermaidError = [System.Convert]::ToBoolean((Resolve-Value -Name 'FailOnMermaidError' -CurrentValue $FailOnMermaidError -DefaultValue $false -Config $config -Bound $scriptBound))
+
+if ([string]::IsNullOrWhiteSpace($MermaidMode)) {
+    $MermaidMode = 'auto'
+}
+if ([string]::IsNullOrWhiteSpace($MermaidFormat)) {
+    $MermaidFormat = 'svg'
+}
+
+$MermaidMode = $MermaidMode.ToLowerInvariant()
+$MermaidFormat = $MermaidFormat.ToLowerInvariant()
+if (@('off', 'auto', 'required') -notcontains $MermaidMode) {
+    throw "Unsupported MermaidMode requested: $MermaidMode"
+}
+if (@('svg', 'png') -notcontains $MermaidFormat) {
+    throw "Unsupported MermaidFormat requested: $MermaidFormat"
+}
 
 if (-not $Formats -or $Formats.Count -eq 0) {
     if ($scriptBound.ContainsKey('Formats')) {
@@ -243,6 +521,8 @@ $readmePath = Join-Path $contentRoot 'README.md'
 if (Test-Path $readmePath) {
     Copy-Item -Path $readmePath -Destination (Join-Path $stageBookRoot 'README.md') -Force
 }
+
+Invoke-MermaidPreprocessing -StageBookRoot $stageBookRoot -Mode $MermaidMode -Format $MermaidFormat -FailOnError $FailOnMermaidError
 
 Copy-Item -Path (Join-Path $KindleTemplateDir 'convert-to-kindle.ps1') -Destination (Join-Path $stageKindle 'convert-to-kindle.ps1') -Force
 Copy-Item -Path $MetadataFile -Destination (Join-Path $stageKindle 'metadata.yaml') -Force

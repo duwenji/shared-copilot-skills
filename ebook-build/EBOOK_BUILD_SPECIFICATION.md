@@ -25,6 +25,10 @@ Rules:
 - Use forward-slash path notation in consumer JSON config.
 - `styleFile` is optional and should normally be omitted so the wrapper can resolve the shared default.
 - Repositories that need a broader `chapterFilePattern` such as `^.*\\.md$` should use the documented flat-docs compatibility profile rather than an ad hoc exception.
+- Optional Mermaid keys are supported for EPUB-safe diagram rendering:
+  - `mermaidMode`: `off | auto | required` (default: `auto`)
+  - `mermaidFormat`: `svg | png` (default: `svg`)
+  - `failOnMermaidError`: `true | false` (default: `false`)
 
 Flat-docs compatibility profile (for manual-style repos such as `spa-quiz-app`):
 
@@ -93,9 +97,26 @@ The runner creates an isolated temporary workspace:
 8. Fail if the EPUB artifact was not produced.
 9. Clean temporary workspace unless `preserveTemp` is enabled.
 
+## Optional Mermaid Preprocessing
+
+When `mermaidMode` is `auto` or `required`, the runner scans staged markdown for fenced `mermaid` blocks and renders them to `images/mermaid/` before `pandoc` runs.
+
+Resolution order:
+
+1. `mmdc`
+2. `npx @mermaid-js/mermaid-cli`
+
+If rendering is unavailable:
+
+- `auto`: warn and leave the source block unchanged
+- `required`: fail the build with a clear diagnostic
+
+Use `svg` by default for quality and file size. Switch to `png` only for EPUB readers with poor SVG support.
+
 ## Format Behavior
 
 - `epub`: expected if Pandoc is available
+- Mermaid diagrams are embedded as static images when preprocessing is enabled and a supported renderer is available
 
 ## Error Strategy
 

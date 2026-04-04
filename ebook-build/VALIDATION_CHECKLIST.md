@@ -21,6 +21,7 @@
 - [ ] Section order matches numbered files
 - [ ] Chapter and section headings display their numeric prefixes
 - [ ] Code blocks render correctly
+- [ ] Mermaid diagrams render as images when Mermaid preprocessing is enabled
 - [ ] EPUB navigation works without a page-list section
 
 ## Configuration Consistency

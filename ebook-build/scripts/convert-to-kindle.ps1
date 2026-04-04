@@ -598,12 +598,21 @@ function Convert-ToEpub {
     Write-Host "🔄 EPUB 形式に変換中..." -ForegroundColor Cyan
 
     # 目次深度は metadata.yaml (toc-depth) を使用して一元管理する
+    $resourceSeparator = [System.IO.Path]::PathSeparator
+    $resourcePaths = @(
+        $projectRoot,
+        (Join-Path $projectRoot 'images'),
+        (Join-Path $projectRoot 'images\mermaid'),
+        $scriptDir
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and (Test-Path $_) } | Select-Object -Unique
+
     $pandocArgs = @(
         $ManuscriptPath,
         "--from=markdown+auto_identifiers",
         "--to=epub3",
         "--metadata-file=$EffectiveMetadataFile",
         "--css=$StyleFile",
+        "--resource-path=$($resourcePaths -join $resourceSeparator)",
         "--standalone",
         "--output=$EpubOutput",
         "--top-level-division=chapter",

@@ -31,9 +31,11 @@ ebook-output/
 ## Prerequisites
 
 - Pandoc is available in PATH
+- Node.js is optional but recommended when the source contains Mermaid diagrams; the runner will use `mmdc` or `npx @mermaid-js/mermaid-cli` when Mermaid preprocessing is enabled
 
 ```powershell
 pandoc --version
+node --version
 ```
 
 ## Config ownership
@@ -67,7 +69,29 @@ After each build, verify:
 
 - `../VALIDATION_CHECKLIST.md`
 
-Focus on TOC integrity, heading hierarchy, internal links, chapter numbering, and code block rendering.
+Focus on TOC integrity, heading hierarchy, internal links, chapter numbering, code block rendering, and Mermaid image rendering when enabled.
+
+## Optional Mermaid preprocessing
+
+The shared runner can convert fenced `mermaid` blocks into static images before `pandoc` generates the EPUB.
+
+Recommended consumer config:
+
+```json
+{
+  "mermaidMode": "auto",
+  "mermaidFormat": "svg",
+  "failOnMermaidError": false
+}
+```
+
+Behavior:
+
+- `off`: skip Mermaid processing and keep the source block as-is
+- `auto`: try `mmdc`, then `npx @mermaid-js/mermaid-cli`; warn and continue if rendering is unavailable
+- `required`: fail the build if Mermaid rendering cannot be completed
+
+Use `png` only when a target EPUB reader has SVG rendering issues.
 
 ## Chapter and section contract
 
@@ -89,3 +113,9 @@ Focus on TOC integrity, heading hierarchy, internal links, chapter numbering, an
 
 - Confirm chapter directory names match `^\d{2}-`
 - Confirm chapter file names match `^\d{2}-.*\.md$`
+
+### Mermaid blocks stay as text
+
+- Set `"mermaidMode": "auto"` or `"required"` in the consumer build config
+- Confirm `node` and `npx` are available, or install `mmdc` globally
+- Re-run the build and verify that the generated EPUB shows diagrams as images instead of source text

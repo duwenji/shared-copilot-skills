@@ -818,6 +818,7 @@ function Convert-ToPrintHtml {
         "--metadata-file=$EffectiveMetadataFile",
         '--css=style.css',
         '--standalone',
+        '--embed-resources',
         "--resource-path=$($resourcePaths -join $resourceSeparator)",
         "--output=$HtmlOutput",
         '--top-level-division=chapter'

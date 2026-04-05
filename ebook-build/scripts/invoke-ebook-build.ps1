@@ -560,6 +560,13 @@ if (Test-Path $readmePath) {
 
 Invoke-MermaidPreprocessing -StageBookRoot $stageBookRoot -Mode $MermaidMode -Format $MermaidFormat -FailOnError $FailOnMermaidError
 
+# PDF は staged `kindle/*.html` をブラウザで直接描画するため、
+# 相対参照される画像群も `kindle/images/...` 側に揃えておく。
+$stageImagesPath = Join-Path $stageBookRoot 'images'
+if (Test-Path $stageImagesPath) {
+    Copy-Item -Path $stageImagesPath -Destination (Join-Path $stageKindle 'images') -Recurse -Force
+}
+
 Copy-Item -Path (Join-Path $KindleTemplateDir 'convert-to-kindle.ps1') -Destination (Join-Path $stageKindle 'convert-to-kindle.ps1') -Force
 Copy-Item -Path $MetadataFile -Destination (Join-Path $stageKindle 'metadata.yaml') -Force
 Copy-Item -Path $StyleFile -Destination (Join-Path $stageKindle 'style.css') -Force

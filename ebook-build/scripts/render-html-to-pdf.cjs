@@ -30,6 +30,7 @@ function renderPdf(inputPath, outputPath, browserPath) {
   try {
     const commonArgs = [
       '--disable-gpu',
+      '--allow-file-access-from-files',
       '--run-all-compositor-stages-before-draw',
       '--virtual-time-budget=3000',
       '--no-first-run',
@@ -57,6 +58,7 @@ function renderImage(inputPath, outputPath, browserPath, width, height) {
   try {
     const commonArgs = [
       '--disable-gpu',
+      '--allow-file-access-from-files',
       '--run-all-compositor-stages-before-draw',
       '--hide-scrollbars',
       '--default-background-color=ffffff',

@@ -8,10 +8,11 @@ license: MIT
 
 ## Overview
 
-This skill packages a reusable EPUB build flow for multi-repository distribution.
+This skill packages a reusable ebook build flow for multi-repository distribution.
 
 It is designed for:
-- Building EPUB ebooks from numbered markdown chapter structures
+- Building EPUB and PDF ebooks from numbered markdown chapter structures
+- Emitting shared cover artifacts as `cover.pdf` and `cover.jpg` in `ebook-output/`
 - Reusing the same conversion scripts across repositories
 - Consumer-side configuration with repository-specific metadata and output policy
 
@@ -20,13 +21,15 @@ It is designed for:
 1. Detects source content root (direct or docs/)
 2. Prepares an isolated build workspace
 3. Reuses shared conversion scripts and templates
-4. Builds EPUB from numbered markdown chapter structures
-5. Copies the resulting artifact to the target output directory
+4. Builds EPUB/PDF from numbered markdown chapter structures
+5. Generates `cover.pdf` and `cover.jpg` when PDF output is requested
+6. Copies the resulting artifacts to the target output directory
 
 ## Requirements
 
 - Windows PowerShell 5.1+
 - Pandoc installed and available in PATH
+- Node.js plus a local Chrome or Edge installation when generating PDF and cover artifacts
 
 ## Inputs
 
@@ -37,7 +40,7 @@ Primary script: ./scripts/invoke-ebook-build.ps1
 | sourceRoot | Yes | - | Source project root or docs root containing chapter folders |
 | outputDir | No | sourceRoot/ebook-output | Destination for final ebook artifacts |
 | projectName | No | folder name of sourceRoot | Base filename for outputs |
-| formats | No | [epub] | Optional compatibility input. Only `epub` is accepted |
+| formats | No | [epub] | Optional compatibility input. Supported values are `epub`, `pdf`, and `kdp-markdown` |
 | chapterDirPattern | No | ^\\d{2}- | Chapter directory pattern |
 | chapterFilePattern | No | ^\\d{2}-.*\\.md$ | Chapter file pattern |
 | coverFile | No | 00-COVER.md | Optional cover filename |
@@ -72,7 +75,11 @@ Template files are provided in the central repository under:
 ## Output
 
 The skill writes artifacts such as:
-- project-name.epub
+- `project-name.epub`
+- `project-name.pdf`
+- `cover.pdf`
+- `cover.jpg`
+- `project-name-kdp-registration.md`
 
 ## Notes
 

@@ -611,7 +611,9 @@ if ($documentFormats -contains 'epub') {
 }
 
 if ($documentFormats -contains 'pdf') {
-    $producedPdf = Get-ChildItem -Path $stageOutput -Filter '*.pdf' -File -ErrorAction SilentlyContinue | Select-Object -First 1
+    $producedPdf = Get-ChildItem -Path $stageOutput -Filter '*.pdf' -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -ne 'cover.pdf' } |
+        Select-Object -First 1
     if ($null -eq $producedPdf) {
         throw 'PDF artifact was not produced by the converter.'
     }
@@ -620,6 +622,26 @@ if ($documentFormats -contains 'pdf') {
     Copy-Item -Path $producedPdf.FullName -Destination $pdfDestinationPath -Force
     $copiedArtifacts.Add($pdfDestinationPath)
     Write-Host "Generated: $pdfDestinationPath" -ForegroundColor Green
+
+    $coverPdfSourcePath = Join-Path $stageOutput 'cover.pdf'
+    if (-not (Test-Path $coverPdfSourcePath)) {
+        throw 'cover.pdf artifact was not produced by the converter.'
+    }
+
+    $coverPdfDestinationPath = Join-Path $OutputDir 'cover.pdf'
+    Copy-Item -Path $coverPdfSourcePath -Destination $coverPdfDestinationPath -Force
+    $copiedArtifacts.Add($coverPdfDestinationPath)
+    Write-Host "Generated: $coverPdfDestinationPath" -ForegroundColor Green
+
+    $coverJpgSourcePath = Join-Path $stageOutput 'cover.jpg'
+    if (-not (Test-Path $coverJpgSourcePath)) {
+        throw 'cover.jpg artifact was not produced by the converter.'
+    }
+
+    $coverJpgDestinationPath = Join-Path $OutputDir 'cover.jpg'
+    Copy-Item -Path $coverJpgSourcePath -Destination $coverJpgDestinationPath -Force
+    $copiedArtifacts.Add($coverJpgDestinationPath)
+    Write-Host "Generated: $coverJpgDestinationPath" -ForegroundColor Green
 }
 
 if ($Formats -contains 'kdp-markdown') {

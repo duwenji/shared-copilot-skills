@@ -632,7 +632,8 @@ function Convert-ToPrintHtml {
         [Parameter(Mandatory=$true)] [string]$EffectiveMetadataFile,
         [Parameter(Mandatory=$true)] [string]$StyleFile,
         [Parameter(Mandatory=$true)] [string]$PrintStyleFile,
-        [Parameter(Mandatory=$true)] [string]$HtmlOutput
+        [Parameter(Mandatory=$true)] [string]$HtmlOutput,
+        [bool]$IncludeTableOfContents = $true
     )
 
     $resourceSeparator = [System.IO.Path]::PathSeparator
@@ -652,9 +653,12 @@ function Convert-ToPrintHtml {
         '--standalone',
         "--resource-path=$($resourcePaths -join $resourceSeparator)",
         "--output=$HtmlOutput",
-        '--top-level-division=chapter',
-        '--table-of-contents'
+        '--top-level-division=chapter'
     )
+
+    if ($IncludeTableOfContents) {
+        $pandocArgs += '--table-of-contents'
+    }
 
     if (Test-Path $PrintStyleFile) {
         $pandocArgs += '--css=print.css'
@@ -666,20 +670,181 @@ function Convert-ToPrintHtml {
     }
 }
 
+function Invoke-BrowserRender {
+    param(
+        [Parameter(Mandatory=$true)] [ValidateSet('pdf', 'image')] [string]$Mode,
+        [Parameter(Mandatory=$true)] [string]$InputHtml,
+        [Parameter(Mandatory=$true)] [string]$OutputPath,
+        [Parameter(Mandatory=$true)] [string]$BrowserExecutable,
+        [Parameter(Mandatory=$true)] [string]$NodeExecutable,
+        [int]$Width = 1600,
+        [int]$Height = 2400
+    )
+
+    $renderScript = Join-Path $scriptDir 'render-html-to-pdf.cjs'
+    if (-not (Test-Path $renderScript)) {
+        throw "render-html-to-pdf.cjs が見つかりません: $renderScript"
+    }
+
+    $renderArgs = @($renderScript, $Mode, $InputHtml, $OutputPath, $BrowserExecutable)
+    if ($Mode -eq 'image') {
+        $renderArgs += @($Width.ToString(), $Height.ToString())
+    }
+
+    & $NodeExecutable @renderArgs
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $OutputPath)) {
+        throw "ブラウザベースの描画に失敗しました。mode=$Mode output=$OutputPath"
+    }
+}
+
+function Convert-ImageToJpeg {
+    param(
+        [Parameter(Mandatory=$true)] [string]$InputPath,
+        [Parameter(Mandatory=$true)] [string]$OutputPath,
+        [int]$Quality = 90
+    )
+
+    Add-Type -AssemblyName System.Drawing
+    Remove-Item -Path $OutputPath -Force -ErrorAction SilentlyContinue
+
+    $image = $null
+    try {
+        $image = [System.Drawing.Image]::FromFile($InputPath)
+        $jpegCodec = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() |
+            Where-Object { $_.MimeType -eq 'image/jpeg' } |
+            Select-Object -First 1
+
+        if ($null -ne $jpegCodec) {
+            $encoder = [System.Drawing.Imaging.Encoder]::Quality
+            $encoderParams = New-Object System.Drawing.Imaging.EncoderParameters(1)
+            $encoderParams.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter($encoder, [long]$Quality)
+            $image.Save($OutputPath, $jpegCodec, $encoderParams)
+        } else {
+            $image.Save($OutputPath, [System.Drawing.Imaging.ImageFormat]::Jpeg)
+        }
+    } finally {
+        if ($null -ne $image) {
+            $image.Dispose()
+        }
+    }
+
+    if (-not (Test-Path $OutputPath)) {
+        throw "JPEG 変換に失敗しました: $OutputPath"
+    }
+}
+
+function New-CoverPdfHtml {
+    param(
+        [Parameter(Mandatory=$true)] [string]$ImagePath,
+        [Parameter(Mandatory=$true)] [string]$HtmlOutput,
+        [string]$DocumentTitle = 'Cover'
+    )
+
+    $imageFileName = [System.IO.Path]::GetFileName($ImagePath)
+    $safeTitle = [System.Net.WebUtility]::HtmlEncode($DocumentTitle)
+    $html = @"
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<title>$safeTitle</title>
+<style>
+@page {
+    size: A4;
+    margin: 0;
+}
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: #ffffff;
+}
+body {
+    display: flex;
+    align-items: stretch;
+    justify-content: stretch;
+}
+img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: center center;
+    background: #ffffff;
+}
+</style>
+</head>
+<body>
+    <img src="$imageFileName" alt="Cover preview" />
+</body>
+</html>
+"@
+
+    [System.IO.File]::WriteAllText($HtmlOutput, $html, $Script:Utf8NoBom)
+}
+
+function New-CoverArtifacts {
+    param(
+        [Parameter(Mandatory=$true)] [string]$ManuscriptPath,
+        [Parameter(Mandatory=$true)] [string]$CoverPath,
+        [Parameter(Mandatory=$true)] [string]$EffectiveMetadataFile,
+        [Parameter(Mandatory=$true)] [string]$StyleFile,
+        [Parameter(Mandatory=$true)] [string]$PrintStyleFile,
+        [Parameter(Mandatory=$true)] [string]$CoverPdfOutput,
+        [Parameter(Mandatory=$true)] [string]$CoverJpgOutput
+    )
+
+    Write-Host '🖼 表紙アセットを生成中...' -ForegroundColor Cyan
+
+    $browserExecutable = Get-PreferredBrowserExecutable
+    if (-not $browserExecutable) {
+        throw 'Chrome または Edge が見つかりません。表紙アセット生成にはいずれかのブラウザが必要です。'
+    }
+
+    $nodeCommand = Get-Command node -ErrorAction SilentlyContinue
+    if (-not $nodeCommand) {
+        throw 'Node.js が見つかりません。表紙アセット生成には Node.js が必要です。'
+    }
+
+    $coverSourcePath = $CoverPath
+    if (-not (Test-Path $coverSourcePath)) {
+        Write-Warning "Cover source not found: $CoverPath. Falling back to the assembled manuscript."
+        $coverSourcePath = $ManuscriptPath
+    }
+
+    $coverHtmlOutput = Join-Path $scriptDir ("$projectName.cover.html")
+    $coverScreenshotPath = Join-Path $scriptDir ("$projectName.cover.png")
+    $coverPdfHtml = Join-Path (Split-Path $CoverJpgOutput -Parent) ("$projectName.cover-sheet.html")
+
+    try {
+        Convert-ToPrintHtml -ManuscriptPath $coverSourcePath -EffectiveMetadataFile $EffectiveMetadataFile -StyleFile $StyleFile -PrintStyleFile $PrintStyleFile -HtmlOutput $coverHtmlOutput -IncludeTableOfContents $false
+        Invoke-BrowserRender -Mode 'image' -InputHtml $coverHtmlOutput -OutputPath $coverScreenshotPath -BrowserExecutable $browserExecutable -NodeExecutable $nodeCommand.Source -Width 1600 -Height 2400
+        Convert-ImageToJpeg -InputPath $coverScreenshotPath -OutputPath $CoverJpgOutput -Quality 92
+        New-CoverPdfHtml -ImagePath $CoverJpgOutput -HtmlOutput $coverPdfHtml -DocumentTitle "$projectName cover"
+        Invoke-BrowserRender -Mode 'pdf' -InputHtml $coverPdfHtml -OutputPath $CoverPdfOutput -BrowserExecutable $browserExecutable -NodeExecutable $nodeCommand.Source
+        Write-Host "✅ 表紙アセット作成成功: $CoverPdfOutput / $CoverJpgOutput" -ForegroundColor Green
+    } finally {
+        Remove-Item -Path $coverHtmlOutput, $coverScreenshotPath, $coverPdfHtml -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Convert-ToPdf {
     param(
         [Parameter(Mandatory=$true)] [string]$ManuscriptPath,
         [Parameter(Mandatory=$true)] [string]$EffectiveMetadataFile,
         [Parameter(Mandatory=$true)] [string]$StyleFile,
         [Parameter(Mandatory=$true)] [string]$PrintStyleFile,
-        [Parameter(Mandatory=$true)] [string]$PdfOutput
+        [Parameter(Mandatory=$true)] [string]$PdfOutput,
+        [Parameter(Mandatory=$true)] [string]$CoverPath,
+        [Parameter(Mandatory=$true)] [string]$CoverPdfOutput,
+        [Parameter(Mandatory=$true)] [string]$CoverJpgOutput
     )
 
     Write-Host '🔄 PDF 形式に変換中...' -ForegroundColor Cyan
 
     $htmlOutput = Join-Path $scriptDir ("$projectName.print.html")
     try {
-        Convert-ToPrintHtml -ManuscriptPath $ManuscriptPath -EffectiveMetadataFile $EffectiveMetadataFile -StyleFile $StyleFile -PrintStyleFile $PrintStyleFile -HtmlOutput $htmlOutput
+        Convert-ToPrintHtml -ManuscriptPath $ManuscriptPath -EffectiveMetadataFile $EffectiveMetadataFile -StyleFile $StyleFile -PrintStyleFile $PrintStyleFile -HtmlOutput $htmlOutput -IncludeTableOfContents $true
 
         $browserExecutable = Get-PreferredBrowserExecutable
         if (-not $browserExecutable) {
@@ -691,17 +856,10 @@ function Convert-ToPdf {
             throw 'Node.js が見つかりません。PDF 生成には Node.js が必要です。'
         }
 
-        $renderScript = Join-Path $scriptDir 'render-html-to-pdf.cjs'
-        if (-not (Test-Path $renderScript)) {
-            throw "render-html-to-pdf.cjs が見つかりません: $renderScript"
-        }
-
-        & $nodeCommand.Source $renderScript $htmlOutput $PdfOutput $browserExecutable
-        if ($LASTEXITCODE -ne 0 -or -not (Test-Path $PdfOutput)) {
-            throw 'ブラウザベースの PDF 生成に失敗しました。'
-        }
-
+        Invoke-BrowserRender -Mode 'pdf' -InputHtml $htmlOutput -OutputPath $PdfOutput -BrowserExecutable $browserExecutable -NodeExecutable $nodeCommand.Source
         Write-Host "✅ PDF 作成成功: $PdfOutput" -ForegroundColor Green
+
+        New-CoverArtifacts -ManuscriptPath $ManuscriptPath -CoverPath $CoverPath -EffectiveMetadataFile $EffectiveMetadataFile -StyleFile $StyleFile -PrintStyleFile $PrintStyleFile -CoverPdfOutput $CoverPdfOutput -CoverJpgOutput $CoverJpgOutput
     } catch {
         Write-Host "❌ PDF 作成エラー: $_" -ForegroundColor Red
     } finally {
@@ -826,13 +984,15 @@ function Main {
     $projectName = (Split-Path -Leaf $projectRoot).ToLowerInvariant()
     $epubOutput = Join-Path $outputDir "$projectName.epub"
     $pdfOutput = Join-Path $outputDir "$projectName.pdf"
+    $coverPdfOutput = Join-Path $outputDir 'cover.pdf'
+    $coverJpgOutput = Join-Path $outputDir 'cover.jpg'
 
     if ($Formats -contains 'epub') {
         Convert-ToEpub -ManuscriptPath $manuscriptPath -EffectiveMetadataFile $effectiveMetadataFile -StyleFile $styleFile -EpubOutput $epubOutput
     }
 
     if ($Formats -contains 'pdf') {
-        Convert-ToPdf -ManuscriptPath $manuscriptPath -EffectiveMetadataFile $effectiveMetadataFile -StyleFile $styleFile -PrintStyleFile $PrintStyleFile -PdfOutput $pdfOutput
+        Convert-ToPdf -ManuscriptPath $manuscriptPath -EffectiveMetadataFile $effectiveMetadataFile -StyleFile $styleFile -PrintStyleFile $PrintStyleFile -PdfOutput $pdfOutput -CoverPath $coverPath -CoverPdfOutput $coverPdfOutput -CoverJpgOutput $coverJpgOutput
     }
 
     # ============================================
@@ -845,7 +1005,7 @@ function Main {
 
     Write-Host ""
     Write-Host "Generated files:" -ForegroundColor Cyan
-    $outputs = @(Get-ChildItem $outputDir -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in @('.epub', '.pdf') })
+    $outputs = @(Get-ChildItem $outputDir -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in @('.epub', '.pdf', '.jpg') })
 
     if ($outputs -and $outputs.Count -gt 0) {
         $outputs | ForEach-Object {

@@ -23,10 +23,74 @@ function tryRender(browserPath, args, outputPath) {
   throw new Error(details || `Browser exited with status ${result.status}`);
 }
 
+function renderPdf(inputPath, outputPath, browserPath) {
+  const fileUrl = `file:///${inputPath.replace(/\\/g, '/')}`;
+  const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ebook-pdf-'));
+
+  try {
+    const commonArgs = [
+      '--disable-gpu',
+      '--run-all-compositor-stages-before-draw',
+      '--virtual-time-budget=3000',
+      '--no-first-run',
+      '--no-default-browser-check',
+      `--user-data-dir=${profileDir}`,
+      `--print-to-pdf=${outputPath}`,
+      '--no-pdf-header-footer',
+      fileUrl
+    ];
+
+    try {
+      tryRender(browserPath, ['--headless=new', ...commonArgs], outputPath);
+    } catch {
+      tryRender(browserPath, ['--headless', ...commonArgs], outputPath);
+    }
+  } finally {
+    fs.rmSync(profileDir, { recursive: true, force: true });
+  }
+}
+
+function renderImage(inputPath, outputPath, browserPath, width, height) {
+  const fileUrl = `file:///${inputPath.replace(/\\/g, '/')}`;
+  const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ebook-shot-'));
+
+  try {
+    const commonArgs = [
+      '--disable-gpu',
+      '--run-all-compositor-stages-before-draw',
+      '--hide-scrollbars',
+      '--default-background-color=ffffff',
+      '--force-device-scale-factor=1.5',
+      '--virtual-time-budget=3000',
+      '--no-first-run',
+      '--no-default-browser-check',
+      `--user-data-dir=${profileDir}`,
+      `--window-size=${width},${height}`,
+      `--screenshot=${outputPath}`,
+      fileUrl
+    ];
+
+    try {
+      tryRender(browserPath, ['--headless=new', ...commonArgs], outputPath);
+    } catch {
+      tryRender(browserPath, ['--headless', ...commonArgs], outputPath);
+    }
+  } finally {
+    fs.rmSync(profileDir, { recursive: true, force: true });
+  }
+}
+
 function main() {
-  const [inputPath, outputPath, browserPath] = process.argv.slice(2);
+  const cliArgs = process.argv.slice(2);
+  let mode = 'pdf';
+
+  if (cliArgs[0] === 'pdf' || cliArgs[0] === 'image') {
+    mode = cliArgs.shift();
+  }
+
+  const [inputPath, outputPath, browserPath, widthArg, heightArg] = cliArgs;
   if (!inputPath || !outputPath || !browserPath) {
-    throw new Error('Usage: node render-html-to-pdf.cjs <inputHtml> <outputPdf> <browserPath>');
+    throw new Error('Usage: node render-html-to-pdf.cjs [pdf|image] <inputHtml> <outputPath> <browserPath> [width height]');
   }
 
   const resolvedInput = path.resolve(inputPath);
@@ -45,29 +109,20 @@ function main() {
     fs.unlinkSync(resolvedOutput);
   }
 
-  const fileUrl = `file:///${resolvedInput.replace(/\\/g, '/')}`;
-  const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ebook-pdf-'));
+  if (mode === 'image') {
+    const width = Number.parseInt(widthArg || '1600', 10);
+    const height = Number.parseInt(heightArg || '2400', 10);
+    renderImage(resolvedInput, resolvedOutput, resolvedBrowser, width, height);
 
-  try {
-    const commonArgs = [
-      '--disable-gpu',
-      '--run-all-compositor-stages-before-draw',
-      '--no-first-run',
-      '--no-default-browser-check',
-      `--user-data-dir=${profileDir}`,
-      `--print-to-pdf=${resolvedOutput}`,
-      '--no-pdf-header-footer',
-      fileUrl
-    ];
-
-    try {
-      tryRender(resolvedBrowser, ['--headless=new', ...commonArgs], resolvedOutput);
-    } catch {
-      tryRender(resolvedBrowser, ['--headless', ...commonArgs], resolvedOutput);
+    if (!fs.existsSync(resolvedOutput)) {
+      throw new Error(`Image was not produced: ${resolvedOutput}`);
     }
-  } finally {
-    fs.rmSync(profileDir, { recursive: true, force: true });
+
+    console.log(`Generated image: ${resolvedOutput}`);
+    return;
   }
+
+  renderPdf(resolvedInput, resolvedOutput, resolvedBrowser);
 
   if (!fs.existsSync(resolvedOutput)) {
     throw new Error(`PDF was not produced: ${resolvedOutput}`);

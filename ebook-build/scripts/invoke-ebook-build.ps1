@@ -584,6 +584,7 @@ if ($documentFormats.Count -gt 0) {
     try {
         & powershell -NoProfile -ExecutionPolicy Bypass -File $stageConvertScript `
             -Formats ($documentFormats -join ',') `
+            -KdpMetadataFile $KdpMetadataFile `
             -ChapterDirPattern $ChapterDirPattern `
             -ChapterFilePattern $ChapterFilePattern `
             -CoverFile $CoverFile

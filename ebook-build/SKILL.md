@@ -13,6 +13,7 @@ This skill packages a reusable ebook build flow for multi-repository distributio
 It is designed for:
 - Building EPUB and PDF ebooks from numbered markdown chapter structures
 - Emitting shared cover artifacts as `cover.pdf` and `cover.jpg` in `ebook-output/`
+- Sizing `cover.pdf` as a paperback-ready KDP cover spread based on trim size and page count
 - Reusing the same conversion scripts across repositories
 - Consumer-side configuration with repository-specific metadata and output policy
 
@@ -23,6 +24,7 @@ It is designed for:
 3. Reuses shared conversion scripts and templates
 4. Builds EPUB/PDF from numbered markdown chapter structures
 5. Generates `cover.pdf` and `cover.jpg` when PDF output is requested
+   - `cover.pdf` uses KDP-style spread dimensions instead of a generic A4 page
 6. Copies the resulting artifacts to the target output directory
 
 ## Requirements

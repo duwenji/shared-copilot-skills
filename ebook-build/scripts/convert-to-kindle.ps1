@@ -16,6 +16,7 @@ param(
     [string]$styleFile,
     [string[]]$Formats = @('epub'),
     [string]$PrintStyleFile,
+    [string]$KdpMetadataFile,
     [string]$ChapterDirPattern = '^\d{2}-',
     [string]$ChapterFilePattern = '^\d{2}-.*\.md$',
     [string]$CoverFile = '00-COVER.md'
@@ -594,6 +595,172 @@ function Test-ValidPath {
     }
 }
 
+function Convert-SimpleYamlToMap {
+    param([string]$Path)
+
+    $result = @{}
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path $Path)) {
+        return $result
+    }
+
+    $lines = Get-Content -Path $Path -Encoding UTF8
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        $line = $lines[$i]
+        if ([string]::IsNullOrWhiteSpace($line)) { continue }
+
+        $trimmed = $line.Trim()
+        if ($trimmed -eq '---' -or $trimmed.StartsWith('#')) { continue }
+
+        if ($line -notmatch '^(?<key>[A-Za-z0-9_-]+)\s*:\s*(?<value>.*)$') {
+            continue
+        }
+
+        $key = $Matches['key']
+        $value = $Matches['value'].Trim()
+
+        if ($value -eq '>' -or $value -eq '|') {
+            $buffer = New-Object 'System.Collections.Generic.List[string]'
+            while (($i + 1) -lt $lines.Count -and $lines[$i + 1] -match '^\s{2,}.+$') {
+                $i += 1
+                $buffer.Add($lines[$i].Trim())
+            }
+
+            if ($value -eq '>') {
+                $result[$key] = ($buffer.ToArray() -join ' ').Trim()
+            } else {
+                $result[$key] = ($buffer.ToArray() -join [Environment]::NewLine).Trim()
+            }
+            continue
+        }
+
+        $normalizedValue = $value.Trim().Trim('"').Trim("'")
+        if (-not [string]::IsNullOrWhiteSpace($normalizedValue)) {
+            $result[$key] = $normalizedValue
+        }
+    }
+
+    return $result
+}
+
+function Get-StringValue {
+    param(
+        [hashtable]$Map,
+        [string[]]$Keys,
+        [string]$Default = ''
+    )
+
+    foreach ($key in $Keys) {
+        if (-not $Map.ContainsKey($key)) {
+            continue
+        }
+
+        $value = $Map[$key]
+        if ($null -ne $value -and -not [string]::IsNullOrWhiteSpace([string]$value)) {
+            return ([string]$value).Trim()
+        }
+    }
+
+    return $Default
+}
+
+function Format-InvariantNumber {
+    param([double]$Value)
+
+    return [string]::Format([System.Globalization.CultureInfo]::InvariantCulture, '{0:0.###}', $Value)
+}
+
+function Get-PdfPageCount {
+    param([Parameter(Mandatory=$true)] [string]$PdfPath)
+
+    if (-not (Test-Path $PdfPath)) {
+        return 0
+    }
+
+    $pdfBytes = [System.IO.File]::ReadAllBytes($PdfPath)
+    $pdfText = [System.Text.Encoding]::ASCII.GetString($pdfBytes)
+    $pageMatches = [System.Text.RegularExpressions.Regex]::Matches($pdfText, '/Type\s*/Page\b')
+    if ($pageMatches.Count -gt 0) {
+        return $pageMatches.Count
+    }
+
+    $countMatch = [System.Text.RegularExpressions.Regex]::Match($pdfText, '/Count\s+(?<count>\d+)')
+    if ($countMatch.Success) {
+        return [int]$countMatch.Groups['count'].Value
+    }
+
+    return 0
+}
+
+function Convert-TrimSizeToInches {
+    param([string]$TrimSize)
+
+    if ([string]::IsNullOrWhiteSpace($TrimSize)) {
+        $normalized = '6in x 9in'
+    } else {
+        $normalized = $TrimSize.Trim().ToLowerInvariant()
+    }
+
+    $normalized = $normalized -replace '×', 'x'
+    $normalized = $normalized -replace '”|″|inches|inch', 'in'
+
+    if ($normalized -match '^(?<width>\d+(?:\.\d+)?)\s*mm\s*x\s*(?<height>\d+(?:\.\d+)?)\s*mm$') {
+        return [PSCustomObject]@{
+            WidthInches = [double]$Matches['width'] / 25.4
+            HeightInches = [double]$Matches['height'] / 25.4
+        }
+    }
+
+    if ($normalized -match '^(?<width>\d+(?:\.\d+)?)\s*(?:in)?\s*x\s*(?<height>\d+(?:\.\d+)?)\s*(?:in)?$') {
+        return [PSCustomObject]@{
+            WidthInches = [double]$Matches['width']
+            HeightInches = [double]$Matches['height']
+        }
+    }
+
+    throw "Trim size format is not supported: $TrimSize"
+}
+
+function Get-SpineWidthPerPage {
+    param([string]$PaperHint)
+
+    $normalized = if ([string]::IsNullOrWhiteSpace($PaperHint)) { '' } else { $PaperHint.ToLowerInvariant() }
+    if ($normalized -match 'cream') {
+        return 0.0025
+    }
+
+    if ($normalized -match 'color|premium') {
+        return 0.002347
+    }
+
+    return 0.002252
+}
+
+function Get-CoverLayoutSpec {
+    param(
+        [string]$KdpMetadataFile,
+        [string]$PdfPath
+    )
+
+    $kdpMetadata = Convert-SimpleYamlToMap -Path $KdpMetadataFile
+    $trimSize = Get-StringValue -Map $kdpMetadata -Keys @('trimSize') -Default '6in x 9in'
+    $paperHint = Get-StringValue -Map $kdpMetadata -Keys @('paperType', 'paperColor', 'interiorType', 'inkAndPaperType') -Default 'black & white on white paper'
+    $trim = Convert-TrimSizeToInches -TrimSize $trimSize
+    $pageCount = Get-PdfPageCount -PdfPath $PdfPath
+    $outerMargin = 0.125
+    $spineWidth = [Math]::Round(($pageCount * (Get-SpineWidthPerPage -PaperHint $paperHint)), 3)
+
+    return [PSCustomObject]@{
+        TrimSizeLabel = $trimSize
+        PageCount = $pageCount
+        TrimWidthInches = [double]$trim.WidthInches
+        TrimHeightInches = [double]$trim.HeightInches
+        SpineWidthInches = [double]$spineWidth
+        OuterMarginInches = [double]$outerMargin
+        TotalWidthInches = [double]([Math]::Round((($trim.WidthInches * 2) + $spineWidth + ($outerMargin * 2)), 3))
+        TotalHeightInches = [double]([Math]::Round(($trim.HeightInches + ($outerMargin * 2)), 3))
+    }
+}
+
 # ============================================
 # 変換処理
 # ============================================
@@ -737,11 +904,26 @@ function New-CoverPdfHtml {
     param(
         [Parameter(Mandatory=$true)] [string]$ImagePath,
         [Parameter(Mandatory=$true)] [string]$HtmlOutput,
+        [Parameter(Mandatory=$true)] [double]$PageWidthInches,
+        [Parameter(Mandatory=$true)] [double]$PageHeightInches,
+        [Parameter(Mandatory=$true)] [double]$TrimWidthInches,
+        [Parameter(Mandatory=$true)] [double]$TrimHeightInches,
+        [Parameter(Mandatory=$true)] [double]$SpineWidthInches,
+        [double]$OuterMarginInches = 0.125,
         [string]$DocumentTitle = 'Cover'
     )
 
     $imageFileName = [System.IO.Path]::GetFileName($ImagePath)
     $safeTitle = [System.Net.WebUtility]::HtmlEncode($DocumentTitle)
+    $pageWidthCss = Format-InvariantNumber -Value $PageWidthInches
+    $pageHeightCss = Format-InvariantNumber -Value $PageHeightInches
+    $trimWidthCss = Format-InvariantNumber -Value $TrimWidthInches
+    $trimHeightCss = Format-InvariantNumber -Value $TrimHeightInches
+    $outerMarginCss = Format-InvariantNumber -Value $OuterMarginInches
+    $spineWidthCss = Format-InvariantNumber -Value $SpineWidthInches
+    $frontLeftCss = Format-InvariantNumber -Value ($OuterMarginInches + $TrimWidthInches + $SpineWidthInches)
+    $spineLeftCss = Format-InvariantNumber -Value ($OuterMarginInches + $TrimWidthInches)
+
     $html = @"
 <!DOCTYPE html>
 <html lang="ja">
@@ -750,32 +932,70 @@ function New-CoverPdfHtml {
 <title>$safeTitle</title>
 <style>
 @page {
-    size: A4;
+    size: ${pageWidthCss}in ${pageHeightCss}in;
     margin: 0;
 }
 html, body {
     margin: 0;
     padding: 0;
-    width: 100%;
-    height: 100%;
+    width: ${pageWidthCss}in;
+    height: ${pageHeightCss}in;
     background: #ffffff;
 }
 body {
+    overflow: hidden;
+}
+.cover-sheet {
+    position: relative;
+    width: ${pageWidthCss}in;
+    height: ${pageHeightCss}in;
+    background: #ffffff;
+}
+.back-panel {
+    position: absolute;
+    left: ${outerMarginCss}in;
+    top: ${outerMarginCss}in;
+    width: ${trimWidthCss}in;
+    height: ${trimHeightCss}in;
+    background: #ffffff;
+}
+.spine-panel {
+    position: absolute;
+    left: ${spineLeftCss}in;
+    top: ${outerMarginCss}in;
+    width: ${spineWidthCss}in;
+    height: ${trimHeightCss}in;
+    background: #ffffff;
+}
+.front-panel {
+    position: absolute;
+    left: ${frontLeftCss}in;
+    top: ${outerMarginCss}in;
+    width: ${trimWidthCss}in;
+    height: ${trimHeightCss}in;
+    background: #ffffff;
     display: flex;
     align-items: stretch;
     justify-content: stretch;
 }
-img {
+.front-panel img {
     width: 100%;
     height: 100%;
-    object-fit: contain;
+    object-fit: cover;
     object-position: center center;
+    display: block;
     background: #ffffff;
 }
 </style>
 </head>
 <body>
-    <img src="$imageFileName" alt="Cover preview" />
+    <div class="cover-sheet">
+        <div class="back-panel" aria-hidden="true"></div>
+        <div class="spine-panel" aria-hidden="true"></div>
+        <div class="front-panel">
+            <img src="$imageFileName" alt="Cover preview" />
+        </div>
+    </div>
 </body>
 </html>
 "@
@@ -791,7 +1011,9 @@ function New-CoverArtifacts {
         [Parameter(Mandatory=$true)] [string]$StyleFile,
         [Parameter(Mandatory=$true)] [string]$PrintStyleFile,
         [Parameter(Mandatory=$true)] [string]$CoverPdfOutput,
-        [Parameter(Mandatory=$true)] [string]$CoverJpgOutput
+        [Parameter(Mandatory=$true)] [string]$CoverJpgOutput,
+        [Parameter(Mandatory=$true)] [string]$PdfPath,
+        [string]$KdpMetadataFile
     )
 
     Write-Host '🖼 表紙アセットを生成中...' -ForegroundColor Cyan
@@ -812,6 +1034,9 @@ function New-CoverArtifacts {
         $coverSourcePath = $ManuscriptPath
     }
 
+    $coverLayout = Get-CoverLayoutSpec -KdpMetadataFile $KdpMetadataFile -PdfPath $PdfPath
+    Write-Host ("ℹ cover.pdf size target: {0}in x {1}in (trim={2}, pages={3}, spine={4}in)" -f (Format-InvariantNumber -Value $coverLayout.TotalWidthInches), (Format-InvariantNumber -Value $coverLayout.TotalHeightInches), $coverLayout.TrimSizeLabel, $coverLayout.PageCount, (Format-InvariantNumber -Value $coverLayout.SpineWidthInches)) -ForegroundColor DarkCyan
+
     $coverHtmlOutput = Join-Path $scriptDir ("$projectName.cover.html")
     $coverScreenshotPath = Join-Path $scriptDir ("$projectName.cover.png")
     $coverPdfHtml = Join-Path (Split-Path $CoverJpgOutput -Parent) ("$projectName.cover-sheet.html")
@@ -820,7 +1045,7 @@ function New-CoverArtifacts {
         Convert-ToPrintHtml -ManuscriptPath $coverSourcePath -EffectiveMetadataFile $EffectiveMetadataFile -StyleFile $StyleFile -PrintStyleFile $PrintStyleFile -HtmlOutput $coverHtmlOutput -IncludeTableOfContents $false
         Invoke-BrowserRender -Mode 'image' -InputHtml $coverHtmlOutput -OutputPath $coverScreenshotPath -BrowserExecutable $browserExecutable -NodeExecutable $nodeCommand.Source -Width 1600 -Height 2400
         Convert-ImageToJpeg -InputPath $coverScreenshotPath -OutputPath $CoverJpgOutput -Quality 92
-        New-CoverPdfHtml -ImagePath $CoverJpgOutput -HtmlOutput $coverPdfHtml -DocumentTitle "$projectName cover"
+        New-CoverPdfHtml -ImagePath $CoverJpgOutput -HtmlOutput $coverPdfHtml -PageWidthInches $coverLayout.TotalWidthInches -PageHeightInches $coverLayout.TotalHeightInches -TrimWidthInches $coverLayout.TrimWidthInches -TrimHeightInches $coverLayout.TrimHeightInches -SpineWidthInches $coverLayout.SpineWidthInches -OuterMarginInches $coverLayout.OuterMarginInches -DocumentTitle "$projectName cover"
         Invoke-BrowserRender -Mode 'pdf' -InputHtml $coverPdfHtml -OutputPath $CoverPdfOutput -BrowserExecutable $browserExecutable -NodeExecutable $nodeCommand.Source
         Write-Host "✅ 表紙アセット作成成功: $CoverPdfOutput / $CoverJpgOutput" -ForegroundColor Green
     } finally {
@@ -837,7 +1062,8 @@ function Convert-ToPdf {
         [Parameter(Mandatory=$true)] [string]$PdfOutput,
         [Parameter(Mandatory=$true)] [string]$CoverPath,
         [Parameter(Mandatory=$true)] [string]$CoverPdfOutput,
-        [Parameter(Mandatory=$true)] [string]$CoverJpgOutput
+        [Parameter(Mandatory=$true)] [string]$CoverJpgOutput,
+        [string]$KdpMetadataFile
     )
 
     Write-Host '🔄 PDF 形式に変換中...' -ForegroundColor Cyan
@@ -859,7 +1085,7 @@ function Convert-ToPdf {
         Invoke-BrowserRender -Mode 'pdf' -InputHtml $htmlOutput -OutputPath $PdfOutput -BrowserExecutable $browserExecutable -NodeExecutable $nodeCommand.Source
         Write-Host "✅ PDF 作成成功: $PdfOutput" -ForegroundColor Green
 
-        New-CoverArtifacts -ManuscriptPath $ManuscriptPath -CoverPath $CoverPath -EffectiveMetadataFile $EffectiveMetadataFile -StyleFile $StyleFile -PrintStyleFile $PrintStyleFile -CoverPdfOutput $CoverPdfOutput -CoverJpgOutput $CoverJpgOutput
+        New-CoverArtifacts -ManuscriptPath $ManuscriptPath -CoverPath $CoverPath -EffectiveMetadataFile $EffectiveMetadataFile -StyleFile $StyleFile -PrintStyleFile $PrintStyleFile -CoverPdfOutput $CoverPdfOutput -CoverJpgOutput $CoverJpgOutput -PdfPath $PdfOutput -KdpMetadataFile $KdpMetadataFile
     } catch {
         Write-Host "❌ PDF 作成エラー: $_" -ForegroundColor Red
     } finally {
@@ -992,7 +1218,7 @@ function Main {
     }
 
     if ($Formats -contains 'pdf') {
-        Convert-ToPdf -ManuscriptPath $manuscriptPath -EffectiveMetadataFile $effectiveMetadataFile -StyleFile $styleFile -PrintStyleFile $PrintStyleFile -PdfOutput $pdfOutput -CoverPath $coverPath -CoverPdfOutput $coverPdfOutput -CoverJpgOutput $coverJpgOutput
+        Convert-ToPdf -ManuscriptPath $manuscriptPath -EffectiveMetadataFile $effectiveMetadataFile -StyleFile $styleFile -PrintStyleFile $PrintStyleFile -PdfOutput $pdfOutput -CoverPath $coverPath -CoverPdfOutput $coverPdfOutput -CoverJpgOutput $coverJpgOutput -KdpMetadataFile $KdpMetadataFile
     }
 
     # ============================================

@@ -101,9 +101,31 @@ foreach ($repoRootInput in $RepoRoot) {
             }
         }
 
+        $formatsValue = Get-ConfigPropertyValue -Config $config -Name 'formats'
+        $formats = if ($null -ne $formatsValue) { @($formatsValue | ForEach-Object { $_.ToString().ToLowerInvariant() }) } else { @('epub') }
+        $supportedFormats = @('epub', 'pdf', 'kdp-markdown')
+        $unsupportedFormats = @($formats | Where-Object { $supportedFormats -notcontains $_ })
+        if ($unsupportedFormats.Count -gt 0) {
+            $errors.Add("[$configLabel] unsupported format(s): $($unsupportedFormats -join ', '). Supported values: $($supportedFormats -join ', ')")
+        }
+
         $metadataFileValue = Get-ConfigPropertyValue -Config $config -Name 'metadataFile'
         if (-not [string]::IsNullOrWhiteSpace([string]$metadataFileValue) -and [string]$metadataFileValue -notmatch '^\./\.github/skills-config/ebook-build/.+\.metadata\.yaml$') {
             $warnings.Add("[$configLabel] metadataFile does not follow the canonical './.github/skills-config/ebook-build/<project>.metadata.yaml' format.")
+        }
+
+        $kdpMetadataFileValue = Get-ConfigPropertyValue -Config $config -Name 'kdpMetadataFile'
+        if (-not [string]::IsNullOrWhiteSpace([string]$kdpMetadataFileValue)) {
+            if ([string]$kdpMetadataFileValue -match '\\') {
+                $errors.Add("[$configLabel] 'kdpMetadataFile' uses backslashes. Use forward slashes ('./...') in canonical config.")
+            }
+
+            $resolvedKdpMetadataPath = Resolve-ConfigPath -BasePath $resolvedRepoRoot -Value ([string]$kdpMetadataFileValue)
+            if (-not (Test-Path $resolvedKdpMetadataPath)) {
+                $errors.Add("[$configLabel] KDP metadata file not found: $resolvedKdpMetadataPath")
+            }
+        } elseif ($formats -contains 'kdp-markdown') {
+            $warnings.Add("[$configLabel] formats includes 'kdp-markdown' but no explicit kdpMetadataFile is set. The generator will fall back to the base metadata file.")
         }
 
         $chapterFilePattern = [string](Get-ConfigPropertyValue -Config $config -Name 'chapterFilePattern')

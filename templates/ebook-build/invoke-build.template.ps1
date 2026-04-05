@@ -51,10 +51,10 @@ function Get-SharedSkillRoot {
     param([string]$RepoRoot)
 
     $candidates = @(
-        (Join-Path $RepoRoot '.github/skills/shared-copilot-skills/ebook-build'),
+        (Join-Path $RepoRoot '../shared-copilot-skills/ebook-build'),
         (Join-Path $RepoRoot '.github/skills/shared-skills/ebook-build'),
-        (Join-Path $RepoRoot '.github/skills/ebook-build'),
-        (Join-Path $RepoRoot '../shared-copilot-skills/ebook-build')
+        (Join-Path $RepoRoot '.github/skills/shared-copilot-skills/ebook-build'),
+        (Join-Path $RepoRoot '.github/skills/ebook-build')
     )
 
     foreach ($candidate in $candidates) {
@@ -75,6 +75,7 @@ $projectNameValue      = Get-ConfigValue -Config $config -Name 'projectName'
 $sourceRootValue       = Get-ConfigValue -Config $config -Name 'sourceRoot'
 $outputDirValue        = Get-ConfigValue -Config $config -Name 'outputDir'
 $metadataFileValue     = Get-ConfigValue -Config $config -Name 'metadataFile'
+$kdpMetadataFileValue  = Get-ConfigValue -Config $config -Name 'kdpMetadataFile'
 $styleFileValue        = Get-ConfigValue -Config $config -Name 'styleFile'
 $formatsValue          = Get-ConfigValue -Config $config -Name 'formats'
 $chapterDirPatternValue  = Get-ConfigValue -Config $config -Name 'chapterDirPattern'
@@ -90,13 +91,21 @@ if (-not $outputDir) { $outputDir = Join-Path $repoRoot 'ebook-output' }
 $metadataFile = Resolve-ConfiguredPath -BasePath $repoRoot -Value $metadataFileValue
 if (-not $metadataFile) { $metadataFile = Join-Path $repoRoot ".github/skills-config/ebook-build/$projectName.metadata.yaml" }
 
+$kdpMetadataFile = Resolve-ConfiguredPath -BasePath $repoRoot -Value $kdpMetadataFileValue
+if (-not $kdpMetadataFile) {
+    $defaultKdpMetadataFile = Join-Path $repoRoot ".github/skills-config/ebook-build/$projectName.kdp.yaml"
+    if (Test-Path $defaultKdpMetadataFile) {
+        $kdpMetadataFile = $defaultKdpMetadataFile
+    }
+}
+
 $styleFile = Resolve-ConfiguredPath -BasePath $repoRoot -Value $styleFileValue
 if (-not $styleFile) { $styleFile = Join-Path $sharedSkillRoot 'assets/style.css' }
 
 $invokeScript      = Join-Path $sharedSkillRoot 'scripts/invoke-ebook-build.ps1'
 $kindleTemplateDir = Join-Path $sharedSkillRoot 'scripts'
 
-$formats          = if ($null -ne $formatsValue) { @($formatsValue) } else { @('epub') }
+$formats          = if ($null -ne $formatsValue) { @($formatsValue) } else { @('epub', 'pdf', 'kdp-markdown') }
 $chapterDirPattern  = if ($chapterDirPatternValue)  { [string]$chapterDirPatternValue }  else { '^\d{2}-' }
 $chapterFilePattern = if ($chapterFilePatternValue) { [string]$chapterFilePatternValue } else { '^\d{2}-.*\.md$' }
 $coverFile        = if ($coverFileValue) { [string]$coverFileValue } else { '00-COVER.md' }
@@ -107,6 +116,7 @@ $params = @{
     ProjectName        = $projectName
     KindleTemplateDir  = $kindleTemplateDir
     MetadataFile       = $metadataFile
+    KdpMetadataFile    = $kdpMetadataFile
     StyleFile          = $styleFile
     Formats            = $formats
     ChapterDirPattern  = $chapterDirPattern

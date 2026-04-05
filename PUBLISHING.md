@@ -1,8 +1,29 @@
 # PUBLISHING
 
 ## Shared skill release flow
-1. 対象 skill と `templates/` / `docs/` を更新する
-2. consumer repo で実動確認する
-3. `CHANGELOG.md` を更新する
-4. tag / release の準備を行う
-5. consumer repo の submodule pointer を更新する
+1. 対象 skill・`templates/`・`docs/` を更新する
+2. 代表 consumer repo で実動確認する
+   - `amazon-kdp-guide`
+   - `clean-architecture`
+   - `spa-quiz-app`（flat-docs profile）
+3. `ebook-build` の場合は以下 3 成果物を確認する
+   - `ebook-output/<project>.epub`
+   - `ebook-output/<project>.pdf`
+   - `ebook-output/<project>-kdp-registration.md`
+4. `CHANGELOG.md` を更新する
+5. tag / release の準備を行う
+6. consumer repo の submodule pointer を更新する
+
+## Suggested verification commands
+
+```powershell
+# shared repo 側の変更を反映した状態で consumer repo を確認
+powershell -NoProfile -ExecutionPolicy Bypass -File .\.github\skills-config\ebook-build\invoke-build.ps1
+```
+
+If the release adds or changes the `ebook-build` contract, also verify that:
+
+- `README.md` / `PUBLISHING.md` / template docs are updated
+- `formats` / `kdpMetadataFile` examples still match the current implementation
+- PDF generation prerequisites are documented clearly
+

@@ -1,0 +1,50 @@
+@page {
+  size: 6in 9in;
+  margin: 0.55in 0.55in 0.65in 0.55in;
+}
+
+html {
+  font-size: 11pt;
+}
+
+body {
+  color: #1f2937;
+  background: #ffffff;
+  font-family: "Yu Mincho", "Hiragino Mincho ProN", "Noto Serif CJK JP", Georgia, serif;
+  line-height: 1.6;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  break-after: avoid;
+  color: #111827;
+}
+
+h1 {
+  page-break-before: always;
+  border-bottom: 2px solid #d1d5db;
+  padding-bottom: 0.25rem;
+}
+
+p {
+  text-indent: 0;
+  orphans: 3;
+  widows: 3;
+}
+
+pre, code {
+  font-family: "Cascadia Code", "Consolas", monospace;
+}
+
+pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-radius: 6px;
+}
+
+img, table, pre, blockquote {
+  break-inside: avoid;
+}
+
+nav#TOC {
+  page-break-after: always;
+}

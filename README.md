@@ -20,6 +20,22 @@ This repository is intended to be consumed from business repositories via Git su
 - `ebook-build`
 - `quiz-generator`
 
+## `ebook-build` highlights
+
+The shared `ebook-build` skill now supports three publish-oriented outputs from the same Markdown source:
+
+- `*.epub` — primary ebook artifact for KDP upload and EPUB readers
+- `*.pdf` — fixed-layout review/print-oriented artifact generated via Pandoc + local Chrome/Edge
+- `*-kdp-registration.md` — a Markdown checklist containing KDP metadata, pricing, categories, and upload references
+
+Typical consumer configuration lives under `.github/skills-config/ebook-build/` and uses:
+
+- `<repo>.build.json`
+- `<repo>.metadata.yaml`
+- optional `<repo>.kdp.yaml`
+
+> For PDF generation, consumers should have **Pandoc**, **Node.js**, and a local **Chrome/Edge** installation available.
+
 ## Consumer integration (Git submodule)
 
 Canonical mount path:

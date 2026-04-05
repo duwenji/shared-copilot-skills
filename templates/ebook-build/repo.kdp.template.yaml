@@ -1,0 +1,24 @@
+title: Replace With Book Title
+subtitle: Replace With Subtitle
+description: >
+  Replace with the KDP listing description used on the product page.
+keywords:
+  - keyword 1
+  - keyword 2
+  - keyword 3
+  - keyword 4
+  - keyword 5
+  - keyword 6
+  - keyword 7
+categories:
+  - Computers / Software Development
+  - Computers / Programming
+listPrice: "1490 JPY"
+royaltyPlan: "70%"
+territories: Worldwide
+kdpSelect: "No"
+ageRange: 指定なし
+gradeRange: 指定なし
+trimSize: "6in x 9in"
+bleed: "No bleed"
+layout: fixed-layout PDF

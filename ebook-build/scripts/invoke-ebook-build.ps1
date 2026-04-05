@@ -5,6 +5,7 @@ param(
     [string]$ProjectName,
     [string]$KindleTemplateDir,
     [string]$MetadataFile,
+    [string]$KdpMetadataFile,
     [string]$StyleFile,
     [string[]]$Formats,
     [string]$ChapterDirPattern = '^\d{2}-',
@@ -110,6 +111,27 @@ function Resolve-DefaultMetadataFile {
     }
 
     return $preferredCandidate
+}
+
+function Resolve-DefaultKdpMetadataFile {
+    param(
+        [string]$RepoRoot,
+        [string]$ProjectName
+    )
+
+    $preferredDir = Join-Path $RepoRoot '.github\skills-config\ebook-build'
+    $legacyDir = Join-Path $RepoRoot '.github\skills\ebook-build\configs'
+
+    foreach ($candidate in @(
+        (Join-Path $preferredDir ("$ProjectName.kdp.yaml")),
+        (Join-Path $legacyDir ("$ProjectName.kdp.yaml"))
+    )) {
+        if (Test-Path $candidate) {
+            return $candidate
+        }
+    }
+
+    return $null
 }
 
 function Resolve-ContentRoot {
@@ -442,9 +464,10 @@ if (-not $Formats -or $Formats.Count -eq 0) {
     }
 }
 $Formats = @($Formats | ForEach-Object { $_.ToString().ToLowerInvariant() } | Select-Object -Unique)
-$unsupportedFormats = @($Formats | Where-Object { $_ -ne 'epub' })
+$supportedFormats = @('epub', 'pdf', 'kdp-markdown')
+$unsupportedFormats = @($Formats | Where-Object { $supportedFormats -notcontains $_ })
 if ($unsupportedFormats.Count -gt 0) {
-    throw "Unsupported format requested. This workflow only supports epub. formats=$($Formats -join ',')"
+    throw "Unsupported format requested. supported=$($supportedFormats -join ',') formats=$($Formats -join ',')"
 }
 $SourceRoot = Resolve-ConfiguredPath -PathValue $SourceRoot -RepoRoot $repoRoot
 $KindleTemplateDir = Resolve-ConfiguredPath -PathValue $KindleTemplateDir -RepoRoot $repoRoot
@@ -459,10 +482,13 @@ if (-not $ProjectName) {
 }
 
 $defaultMetadataFile = Resolve-DefaultMetadataFile -RepoRoot $repoRoot -ProjectName $ProjectName
+$defaultKdpMetadataFile = Resolve-DefaultKdpMetadataFile -RepoRoot $repoRoot -ProjectName $ProjectName
 $defaultStyleFile = Join-Path $repoRoot '.github\skills\ebook-build\assets\style.css'
 $MetadataFile = Resolve-Value -Name 'MetadataFile' -CurrentValue $MetadataFile -DefaultValue $defaultMetadataFile -Config $config -Bound $scriptBound
+$KdpMetadataFile = Resolve-Value -Name 'KdpMetadataFile' -CurrentValue $KdpMetadataFile -DefaultValue $defaultKdpMetadataFile -Config $config -Bound $scriptBound
 $StyleFile = Resolve-Value -Name 'StyleFile' -CurrentValue $StyleFile -DefaultValue $defaultStyleFile -Config $config -Bound $scriptBound
 $MetadataFile = Resolve-ConfiguredPath -PathValue $MetadataFile -RepoRoot $repoRoot
+$KdpMetadataFile = Resolve-ConfiguredPath -PathValue $KdpMetadataFile -RepoRoot $repoRoot
 $StyleFile = Resolve-ConfiguredPath -PathValue $StyleFile -RepoRoot $repoRoot
 
 if (-not $OutputDir) {
@@ -474,10 +500,20 @@ if (-not $OutputDir) {
 }
 $OutputDir = Resolve-ConfiguredPath -PathValue $OutputDir -RepoRoot $repoRoot
 
+$printStyleFile = Join-Path (Split-Path $KindleTemplateDir -Parent) 'assets\print.css'
+$kdpPackageScript = Join-Path $KindleTemplateDir 'generate-kdp-package.ps1'
+$pdfRenderScript = Join-Path $KindleTemplateDir 'render-html-to-pdf.cjs'
+
 Ensure-Path -Path $KindleTemplateDir -Label 'Kindle template directory'
 Ensure-Path -Path (Join-Path $KindleTemplateDir 'convert-to-kindle.ps1') -Label 'convert-to-kindle.ps1'
 Ensure-Path -Path $MetadataFile -Label 'metadata file'
 Ensure-Path -Path $StyleFile -Label 'style file'
+Ensure-Path -Path $printStyleFile -Label 'print style file'
+Ensure-Path -Path $kdpPackageScript -Label 'generate-kdp-package.ps1'
+Ensure-Path -Path $pdfRenderScript -Label 'render-html-to-pdf.cjs'
+if (-not [string]::IsNullOrWhiteSpace($KdpMetadataFile)) {
+    Ensure-Path -Path $KdpMetadataFile -Label 'KDP metadata file'
+}
 
 $contentRoot = Resolve-ContentRoot -Root $resolvedSourceRoot -DirPattern $ChapterDirPattern
 $chapterDirs = @(Get-ChildItem -Path $contentRoot -Directory | Where-Object { $_.Name -match $ChapterDirPattern } | Sort-Object Name)
@@ -527,6 +563,8 @@ Invoke-MermaidPreprocessing -StageBookRoot $stageBookRoot -Mode $MermaidMode -Fo
 Copy-Item -Path (Join-Path $KindleTemplateDir 'convert-to-kindle.ps1') -Destination (Join-Path $stageKindle 'convert-to-kindle.ps1') -Force
 Copy-Item -Path $MetadataFile -Destination (Join-Path $stageKindle 'metadata.yaml') -Force
 Copy-Item -Path $StyleFile -Destination (Join-Path $stageKindle 'style.css') -Force
+Copy-Item -Path $printStyleFile -Destination (Join-Path $stageKindle 'print.css') -Force
+Copy-Item -Path $pdfRenderScript -Destination (Join-Path $stageKindle 'render-html-to-pdf.cjs') -Force
 
 $stageConvertScript = Join-Path $stageKindle 'convert-to-kindle.ps1'
 $convertRaw = Get-Content -Path $stageConvertScript -Raw -Encoding UTF8
@@ -539,29 +577,64 @@ $convertRaw = $convertRaw -replace 'Invoke-Item \$outputDir', '# output auto-ope
 $utf8Bom = New-Object System.Text.UTF8Encoding($true)
 [System.IO.File]::WriteAllText($stageConvertScript, $convertRaw, $utf8Bom)
 
-Write-Host 'Running staged converter...' -ForegroundColor Cyan
-Push-Location $stageKindle
-try {
-    & powershell -NoProfile -ExecutionPolicy Bypass -File $stageConvertScript `
-        -ChapterDirPattern $ChapterDirPattern `
-        -ChapterFilePattern $ChapterFilePattern `
-        -CoverFile $CoverFile
-    if ($LASTEXITCODE -ne 0) {
-        throw "Converter failed with exit code $LASTEXITCODE"
+$documentFormats = @($Formats | Where-Object { $_ -in @('epub', 'pdf') })
+if ($documentFormats.Count -gt 0) {
+    Write-Host 'Running staged converter...' -ForegroundColor Cyan
+    Push-Location $stageKindle
+    try {
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $stageConvertScript `
+            -Formats ($documentFormats -join ',') `
+            -ChapterDirPattern $ChapterDirPattern `
+            -ChapterFilePattern $ChapterFilePattern `
+            -CoverFile $CoverFile
+        if ($LASTEXITCODE -ne 0) {
+            throw "Converter failed with exit code $LASTEXITCODE"
+        }
+    } finally {
+        Pop-Location
     }
-} finally {
-    Pop-Location
 }
 
 Write-Host 'Collecting artifacts...' -ForegroundColor Cyan
-$producedEpub = Get-ChildItem -Path $stageOutput -Filter '*.epub' -File -ErrorAction SilentlyContinue | Select-Object -First 1
-if ($null -eq $producedEpub) {
-    throw 'EPUB artifact was not produced by the converter.'
+$copiedArtifacts = New-Object 'System.Collections.Generic.List[string]'
+
+if ($documentFormats -contains 'epub') {
+    $producedEpub = Get-ChildItem -Path $stageOutput -Filter '*.epub' -File -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -eq $producedEpub) {
+        throw 'EPUB artifact was not produced by the converter.'
+    }
+
+    $epubDestinationPath = Join-Path $OutputDir ("$ProjectName.epub")
+    Copy-Item -Path $producedEpub.FullName -Destination $epubDestinationPath -Force
+    $copiedArtifacts.Add($epubDestinationPath)
+    Write-Host "Generated: $epubDestinationPath" -ForegroundColor Green
 }
 
-$destinationPath = Join-Path $OutputDir ("$ProjectName.epub")
-Copy-Item -Path $producedEpub.FullName -Destination $destinationPath -Force
-Write-Host "Generated: $destinationPath" -ForegroundColor Green
+if ($documentFormats -contains 'pdf') {
+    $producedPdf = Get-ChildItem -Path $stageOutput -Filter '*.pdf' -File -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -eq $producedPdf) {
+        throw 'PDF artifact was not produced by the converter.'
+    }
+
+    $pdfDestinationPath = Join-Path $OutputDir ("$ProjectName.pdf")
+    Copy-Item -Path $producedPdf.FullName -Destination $pdfDestinationPath -Force
+    $copiedArtifacts.Add($pdfDestinationPath)
+    Write-Host "Generated: $pdfDestinationPath" -ForegroundColor Green
+}
+
+if ($Formats -contains 'kdp-markdown') {
+    $kdpOutputPath = Join-Path $OutputDir ("$ProjectName-kdp-registration.md")
+    $epubDestinationPath = if ($documentFormats -contains 'epub') { Join-Path $OutputDir ("$ProjectName.epub") } else { $null }
+    $pdfDestinationPath = if ($documentFormats -contains 'pdf') { Join-Path $OutputDir ("$ProjectName.pdf") } else { $null }
+
+    & $kdpPackageScript -ProjectName $ProjectName -MetadataFile $MetadataFile -OutputPath $kdpOutputPath -KdpMetadataFile $KdpMetadataFile -EpubPath $epubDestinationPath -PdfPath $pdfDestinationPath
+    Ensure-Path -Path $kdpOutputPath -Label 'KDP registration markdown'
+    $copiedArtifacts.Add($kdpOutputPath)
+}
+
+if ($copiedArtifacts.Count -eq 0) {
+    Write-Warning 'No output artifacts were requested by the current format selection.'
+}
 
 if ($PreserveTemp) {
     Write-Host "Temporary workspace preserved: $tempRoot" -ForegroundColor Yellow

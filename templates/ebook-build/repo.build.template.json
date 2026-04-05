@@ -2,8 +2,10 @@
   "sourceRoot": ".",
   "outputDir": "./ebook-output",
   "projectName": "replace-with-project-name",
+  "formats": ["epub", "pdf", "kdp-markdown"],
   "chapterDirPattern": "^\\d{2}-",
   "chapterFilePattern": "^\\d{2}-.*\\.md$",
   "coverFile": "00-COVER.md",
-  "metadataFile": "./.github/skills-config/ebook-build/replace-with-project-name.metadata.yaml"
+  "metadataFile": "./.github/skills-config/ebook-build/replace-with-project-name.metadata.yaml",
+  "kdpMetadataFile": "./.github/skills-config/ebook-build/replace-with-project-name.kdp.yaml"
 }

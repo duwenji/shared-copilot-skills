@@ -14,6 +14,8 @@ param(
     [string]$outputDir,
     [string]$metadataFile,
     [string]$styleFile,
+    [string[]]$Formats = @('epub'),
+    [string]$PrintStyleFile,
     [string]$ChapterDirPattern = '^\d{2}-',
     [string]$ChapterFilePattern = '^\d{2}-.*\.md$',
     [string]$CoverFile = '00-COVER.md'
@@ -25,6 +27,15 @@ if (-not $projectRoot) { $projectRoot = Split-Path -Parent $scriptDir }
 if (-not $outputDir) { $outputDir = Join-Path $scriptDir "output" }
 if (-not $metadataFile) { $metadataFile = Join-Path $scriptDir "metadata.yaml" }
 if (-not $styleFile) { $styleFile = Join-Path $scriptDir "style.css" }
+if (-not $PrintStyleFile) { $PrintStyleFile = Join-Path $scriptDir "print.css" }
+if (-not $Formats -or $Formats.Count -eq 0) { $Formats = @('epub') }
+$Formats = @(
+    $Formats |
+        ForEach-Object { $_.ToString().Split(',') } |
+        ForEach-Object { $_.Trim().ToLowerInvariant() } |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        Select-Object -Unique
+)
 
 # UTF-8 BOM なしエンコーディング（共通）
 $Script:Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
@@ -587,6 +598,119 @@ function Test-ValidPath {
 # 変換処理
 # ============================================
 
+function Get-PreferredBrowserExecutable {
+    $candidates = New-Object 'System.Collections.Generic.List[string]'
+
+    foreach ($name in @('chrome', 'msedge', 'chromium', 'google-chrome')) {
+        $command = Get-Command $name -ErrorAction SilentlyContinue
+        if ($command -and -not [string]::IsNullOrWhiteSpace($command.Source)) {
+            $candidates.Add($command.Source)
+        }
+    }
+
+    foreach ($pathCandidate in @(
+        'C:\Program Files\Google\Chrome\Application\chrome.exe',
+        'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe',
+        'C:\Program Files\Microsoft\Edge\Application\msedge.exe',
+        'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
+    )) {
+        $candidates.Add($pathCandidate)
+    }
+
+    foreach ($candidate in ($candidates | Select-Object -Unique)) {
+        if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path $candidate)) {
+            return $candidate
+        }
+    }
+
+    return $null
+}
+
+function Convert-ToPrintHtml {
+    param(
+        [Parameter(Mandatory=$true)] [string]$ManuscriptPath,
+        [Parameter(Mandatory=$true)] [string]$EffectiveMetadataFile,
+        [Parameter(Mandatory=$true)] [string]$StyleFile,
+        [Parameter(Mandatory=$true)] [string]$PrintStyleFile,
+        [Parameter(Mandatory=$true)] [string]$HtmlOutput
+    )
+
+    $resourceSeparator = [System.IO.Path]::PathSeparator
+    $resourcePaths = @(
+        $projectRoot,
+        (Join-Path $projectRoot 'images'),
+        (Join-Path $projectRoot 'images\mermaid'),
+        $scriptDir
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and (Test-Path $_) } | Select-Object -Unique
+
+    $pandocArgs = @(
+        $ManuscriptPath,
+        '--from=markdown+auto_identifiers',
+        '--to=html5',
+        "--metadata-file=$EffectiveMetadataFile",
+        '--css=style.css',
+        '--standalone',
+        "--resource-path=$($resourcePaths -join $resourceSeparator)",
+        "--output=$HtmlOutput",
+        '--top-level-division=chapter',
+        '--table-of-contents'
+    )
+
+    if (Test-Path $PrintStyleFile) {
+        $pandocArgs += '--css=print.css'
+    }
+
+    & pandoc @pandocArgs
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $HtmlOutput)) {
+        throw 'HTML render for PDF generation failed.'
+    }
+}
+
+function Convert-ToPdf {
+    param(
+        [Parameter(Mandatory=$true)] [string]$ManuscriptPath,
+        [Parameter(Mandatory=$true)] [string]$EffectiveMetadataFile,
+        [Parameter(Mandatory=$true)] [string]$StyleFile,
+        [Parameter(Mandatory=$true)] [string]$PrintStyleFile,
+        [Parameter(Mandatory=$true)] [string]$PdfOutput
+    )
+
+    Write-Host '🔄 PDF 形式に変換中...' -ForegroundColor Cyan
+
+    $htmlOutput = Join-Path $scriptDir ("$projectName.print.html")
+    try {
+        Convert-ToPrintHtml -ManuscriptPath $ManuscriptPath -EffectiveMetadataFile $EffectiveMetadataFile -StyleFile $StyleFile -PrintStyleFile $PrintStyleFile -HtmlOutput $htmlOutput
+
+        $browserExecutable = Get-PreferredBrowserExecutable
+        if (-not $browserExecutable) {
+            throw 'Chrome または Edge が見つかりません。PDF 生成にはいずれかのブラウザが必要です。'
+        }
+
+        $nodeCommand = Get-Command node -ErrorAction SilentlyContinue
+        if (-not $nodeCommand) {
+            throw 'Node.js が見つかりません。PDF 生成には Node.js が必要です。'
+        }
+
+        $renderScript = Join-Path $scriptDir 'render-html-to-pdf.cjs'
+        if (-not (Test-Path $renderScript)) {
+            throw "render-html-to-pdf.cjs が見つかりません: $renderScript"
+        }
+
+        & $nodeCommand.Source $renderScript $htmlOutput $PdfOutput $browserExecutable
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path $PdfOutput)) {
+            throw 'ブラウザベースの PDF 生成に失敗しました。'
+        }
+
+        Write-Host "✅ PDF 作成成功: $PdfOutput" -ForegroundColor Green
+    } catch {
+        Write-Host "❌ PDF 作成エラー: $_" -ForegroundColor Red
+    } finally {
+        Remove-Item -Path $htmlOutput -Force -ErrorAction SilentlyContinue
+    }
+
+    Write-Host ''
+}
+
 function Convert-ToEpub {
     param(
         [Parameter(Mandatory=$true)] [string]$ManuscriptPath,
@@ -684,6 +808,10 @@ function Main {
     try {
         Test-ValidPath -Path $metadataFile -Name 'metadata.yaml'
         Test-ValidPath -Path $styleFile -Name 'style.css'
+        if ($Formats -contains 'pdf') {
+            Test-ValidPath -Path $PrintStyleFile -Name 'print.css'
+            Test-ValidPath -Path (Join-Path $scriptDir 'render-html-to-pdf.cjs') -Name 'render-html-to-pdf.cjs'
+        }
         $files | ForEach-Object { Test-ValidPath -Path $_ -Name "入力ファイル" }
         Test-ValidPath -Path $manuscriptPath -Name '一時原稿'
     } catch {
@@ -697,8 +825,15 @@ function Main {
     # 動的にプロジェクト名を取得して出力ファイル名を生成
     $projectName = (Split-Path -Leaf $projectRoot).ToLowerInvariant()
     $epubOutput = Join-Path $outputDir "$projectName.epub"
+    $pdfOutput = Join-Path $outputDir "$projectName.pdf"
 
-    Convert-ToEpub -ManuscriptPath $manuscriptPath -EffectiveMetadataFile $effectiveMetadataFile -StyleFile $styleFile -EpubOutput $epubOutput
+    if ($Formats -contains 'epub') {
+        Convert-ToEpub -ManuscriptPath $manuscriptPath -EffectiveMetadataFile $effectiveMetadataFile -StyleFile $styleFile -EpubOutput $epubOutput
+    }
+
+    if ($Formats -contains 'pdf') {
+        Convert-ToPdf -ManuscriptPath $manuscriptPath -EffectiveMetadataFile $effectiveMetadataFile -StyleFile $styleFile -PrintStyleFile $PrintStyleFile -PdfOutput $pdfOutput
+    }
 
     # ============================================
     # 完了報告
@@ -710,7 +845,7 @@ function Main {
 
     Write-Host ""
     Write-Host "Generated files:" -ForegroundColor Cyan
-    $outputs = @(Get-ChildItem $outputDir -Filter '*.epub' -File -ErrorAction SilentlyContinue)
+    $outputs = @(Get-ChildItem $outputDir -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in @('.epub', '.pdf') })
 
     if ($outputs -and $outputs.Count -gt 0) {
         $outputs | ForEach-Object {
@@ -726,7 +861,7 @@ function Main {
     Write-Host "Output folder: $outputDir" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "Next steps:" -ForegroundColor Cyan
-    Write-Host "  1. Review the EPUB contents"
+    Write-Host "  1. Review the generated EPUB/PDF contents"
     Write-Host "  2. Validate against VALIDATION_CHECKLIST.md"
     Write-Host ""
 

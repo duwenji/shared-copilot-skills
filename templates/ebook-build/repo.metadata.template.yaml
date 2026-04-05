@@ -1,4 +1,5 @@
 title: Replace With Book Title
+subtitle: Replace With Subtitle
 creator: Replace With Author
 language: en-US
 rights: Copyright (c) Replace With Owner
@@ -7,6 +8,11 @@ toc: true
 toc-depth: 2
 publisher: Replace With Publisher
 identifier: replace-with-identifier
+description: >
+  Replace with the short product description used for store listing and metadata export.
+keywords:
+  - software architecture
+  - engineering
 subject:
   - software architecture
   - engineering

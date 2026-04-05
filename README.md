@@ -13,6 +13,7 @@ This repository is intended to be consumed from business repositories via Git su
 - `<skill-name>/prompts/` : Reusable generation prompts (optional)
 - `<skill-name>/CHANGELOG.md` : Per-skill release notes
 - `templates/<skill-name>/` : Consumer-side template files (repo-specific config)
+- `templates/tutorial-content/` : Starter `README.md` / `docs/00-COVER.md` templates for new tutorial repositories
 - `docs/OPERATIONS.md` : Tagging, release, and update policy
 
 ## Included skill
@@ -79,7 +80,9 @@ Do not use `.gitignore` to hide or manage `.github/skills/shared-copilot-skills`
 - Shared in this repository: scripts, assets, skill docs, and skill definition
 - Kept in each consumer repository: build config and metadata files
 
-See `templates/ebook-build/` and `templates/quiz-generator/` for sample consumer files.
+See `templates/ebook-build/`, `templates/quiz-generator/`, and `templates/tutorial-content/` for sample consumer files.
+
+For new tutorial/material repositories, start from `templates/tutorial-content/README.template.md` and `templates/tutorial-content/00-COVER.template.md` so the `spa-quiz-app` guidance stays consistent.
 
 For nested submodule mount (`.github/skills/shared-copilot-skills`), keep path-sensitive settings in consumer wrappers under `.github/skills-config/<skill-name>/`.
 Legacy `.github/skills/shared-skills` mounts remain supported by the consumer wrapper for backward compatibility.

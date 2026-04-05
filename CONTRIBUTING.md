@@ -5,6 +5,7 @@
 ## 基本方針
 - consumer repo で再利用しやすい構成を維持してください。
 - 変更時は wrapper / templates / docs の整合性も確認してください。
+- 新規教材のランディングページは `templates/tutorial-content/` を基点にし、`spa-quiz-app` 案内文を共通化してください。
 - 大きな変更は `Issue` で背景共有してから進めてください。
 
 ## 推奨フロー

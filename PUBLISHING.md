@@ -27,3 +27,8 @@ If the release adds or changes the `ebook-build` contract, also verify that:
 - `formats` / `kdpMetadataFile` examples still match the current implementation
 - PDF generation prerequisites are documented clearly
 
+If the release touches tutorial scaffolding, also verify that:
+
+- `templates/tutorial-content/README.template.md` and `00-COVER.template.md` contain the standard `spa-quiz-app` callout
+- the wording remains `関連トピックをクイズ形式で復習できます`
+

@@ -890,6 +890,136 @@ function Get-PreferredBrowserExecutable {
     return $null
 }
 
+function Convert-ToPdfSafeText {
+    param([string]$Text)
+
+    if ([string]::IsNullOrEmpty($Text)) {
+        return $Text
+    }
+
+    $normalized = $Text
+
+    $sequenceReplacements = [ordered]@{
+        '⏱️' = '[Time] '
+        '⏰' = '[Alert] '
+        '⏳' = '[Pending] '
+        '⌨️' = 'Keyboard '
+        '⚠️' = '[Warning] '
+        '☑️' = '[OK] '
+        '1️⃣' = '1. '
+        '2️⃣' = '2. '
+        '3️⃣' = '3. '
+        '4️⃣' = '4. '
+        '5️⃣' = '5. '
+        '6️⃣' = '6. '
+        '7️⃣' = '7. '
+        '8️⃣' = '8. '
+        '9️⃣' = '9. '
+        '🔟' = '10. '
+        '🅰️' = 'A. '
+        '🅱️' = 'B. '
+        '🅲️' = 'C. '
+        '🅳️' = 'D. '
+    }
+
+    foreach ($entry in $sequenceReplacements.GetEnumerator()) {
+        $normalized = $normalized.Replace([string]$entry.Key, [string]$entry.Value)
+    }
+
+    $normalized = $normalized.Replace([string][char]0xFE0F, '')
+    $normalized = $normalized.Replace([string][char]0x200D, '')
+
+    $symbolReplacements = [ordered]@{
+        '💡' = '[Note] '
+        '✅' = '[OK] '
+        '⚠' = '[Warning] '
+        '🚀' = '[Start] '
+        '📚' = '[Guide] '
+        '🎯' = '[Focus] '
+        '📖' = '[Overview] '
+        '🔗' = '[Links] '
+        '❓' = '[Q&A] '
+        '📞' = '[Support] '
+        '📋' = '[Checklist] '
+        '🛠' = '[Tools] '
+        '📦' = '[Package] '
+        '🔄' = '[Update] '
+        '🖼' = '[Cover] '
+        '✨' = ''
+        '🎉' = ''
+        '→' = ' -> '
+        '←' = ' <- '
+        '↑' = ' up '
+        '↓' = ' down '
+        '↔' = ' <-> '
+        '↗' = ' up-right '
+        '↖' = ' up-left '
+        '↙' = ' down-left '
+        '⇒' = ' => '
+        '≤' = ' <= '
+        '≥' = ' >= '
+        '≈' = ' ~ '
+        '≒' = ' ~ '
+        '≠' = ' != '
+        '∞' = 'infinity'
+        '⌨' = 'Keyboard '
+        '⏱' = '[Time] '
+        '⏰' = '[Alert] '
+        '⏳' = '[Pending] '
+        '⭐' = '* '
+        '⬅' = ' <- '
+        '➡' = ' -> '
+        '⬆' = ' up '
+        '⬇' = ' down '
+        '①' = '1. '
+        '②' = '2. '
+        '③' = '3. '
+        '④' = '4. '
+        '⑤' = '5. '
+        '⑥' = '6. '
+        '⑦' = '7. '
+        '⑧' = '8. '
+        '⑨' = '9. '
+        '⑩' = '10. '
+        '1⃣' = '1. '
+        '2⃣' = '2. '
+        '3⃣' = '3. '
+        '4⃣' = '4. '
+        '5⃣' = '5. '
+        '6⃣' = '6. '
+        '7⃣' = '7. '
+        '8⃣' = '8. '
+        '9⃣' = '9. '
+        '🅰' = 'A. '
+        '🅱' = 'B. '
+        '🅲' = 'C. '
+        '🅳' = 'D. '
+    }
+
+    foreach ($entry in $symbolReplacements.GetEnumerator()) {
+        $normalized = $normalized.Replace([string]$entry.Key, [string]$entry.Value)
+    }
+
+    $normalized = [regex]::Replace($normalized, '[\uD800-\uDBFF][\uDC00-\uDFFF]', ' ')
+    $normalized = [regex]::Replace($normalized, '[\u2190-\u23FF\u2460-\u27BF\u2B00-\u2BFF]', ' ')
+
+    return $normalized
+}
+
+function Convert-GeneratedHtmlToPdfSafeHtml {
+    param([string]$HtmlPath)
+
+    if ([string]::IsNullOrWhiteSpace($HtmlPath) -or -not (Test-Path $HtmlPath)) {
+        return
+    }
+
+    $html = [System.IO.File]::ReadAllText($HtmlPath)
+    $sanitized = Convert-ToPdfSafeText -Text $html
+    if ($sanitized -ne $html) {
+        [System.IO.File]::WriteAllText($HtmlPath, $sanitized, $Script:Utf8NoBom)
+    }
+}
+
 function Convert-ToPrintHtml {
     param(
         [Parameter(Mandatory=$true)] [string]$ManuscriptPath,
@@ -933,6 +1063,8 @@ function Convert-ToPrintHtml {
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path $HtmlOutput)) {
         throw 'HTML render for PDF generation failed.'
     }
+
+    Convert-GeneratedHtmlToPdfSafeHtml -HtmlPath $HtmlOutput
 }
 
 function Invoke-BrowserRender {

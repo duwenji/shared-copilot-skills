@@ -1184,7 +1184,7 @@ function Convert-ToPdf {
             throw 'Node.js が見つかりません。PDF 生成には Node.js が必要です。'
         }
 
-        Invoke-BrowserRender -Mode 'pdf' -InputHtml $htmlOutput -OutputPath $PdfOutput -BrowserExecutable $browserExecutable -NodeExecutable $nodeCommand.Source -ShowPageNumbers $true
+        Invoke-BrowserRender -Mode 'pdf' -InputHtml $htmlOutput -OutputPath $PdfOutput -BrowserExecutable $browserExecutable -NodeExecutable $nodeCommand.Source
         Write-Host "✅ PDF 作成成功: $PdfOutput" -ForegroundColor Green
 
         New-CoverArtifacts -ManuscriptPath $ManuscriptPath -CoverPath $CoverPath -EffectiveMetadataFile $EffectiveMetadataFile -StyleFile $StyleFile -PrintStyleFile $PrintStyleFile -CoverPdfOutput $CoverPdfOutput -CoverJpgOutput $CoverJpgOutput -PdfPath $PdfOutput -KdpMetadataFile $KdpMetadataFile

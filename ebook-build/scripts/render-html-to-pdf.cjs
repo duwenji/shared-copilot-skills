@@ -23,7 +23,7 @@ function tryRender(browserPath, args, outputPath) {
   throw new Error(details || `Browser exited with status ${result.status}`);
 }
 
-function renderPdf(inputPath, outputPath, browserPath) {
+function renderPdf(inputPath, outputPath, browserPath, showPageNumbers = false) {
   const fileUrl = `file:///${inputPath.replace(/\\/g, '/')}`;
   const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ebook-pdf-'));
 
@@ -37,9 +37,12 @@ function renderPdf(inputPath, outputPath, browserPath) {
       '--no-default-browser-check',
       `--user-data-dir=${profileDir}`,
       `--print-to-pdf=${outputPath}`,
-      '--no-pdf-header-footer',
       fileUrl
     ];
+
+    if (!showPageNumbers) {
+      commonArgs.splice(commonArgs.length - 1, 0, '--no-pdf-header-footer');
+    }
 
     try {
       tryRender(browserPath, ['--headless=new', ...commonArgs], outputPath);
@@ -90,9 +93,12 @@ function main() {
     mode = cliArgs.shift();
   }
 
-  const [inputPath, outputPath, browserPath, widthArg, heightArg] = cliArgs;
+  const showPageNumbers = cliArgs.includes('--page-numbers');
+  const normalizedArgs = cliArgs.filter((arg) => arg !== '--page-numbers');
+
+  const [inputPath, outputPath, browserPath, widthArg, heightArg] = normalizedArgs;
   if (!inputPath || !outputPath || !browserPath) {
-    throw new Error('Usage: node render-html-to-pdf.cjs [pdf|image] <inputHtml> <outputPath> <browserPath> [width height]');
+    throw new Error('Usage: node render-html-to-pdf.cjs [pdf|image] <inputHtml> <outputPath> <browserPath> [width height] [--page-numbers]');
   }
 
   const resolvedInput = path.resolve(inputPath);
@@ -124,7 +130,7 @@ function main() {
     return;
   }
 
-  renderPdf(resolvedInput, resolvedOutput, resolvedBrowser);
+  renderPdf(resolvedInput, resolvedOutput, resolvedBrowser, showPageNumbers);
 
   if (!fs.existsSync(resolvedOutput)) {
     throw new Error(`PDF was not produced: ${resolvedOutput}`);

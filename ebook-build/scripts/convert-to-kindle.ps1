@@ -540,6 +540,103 @@ function New-ReadmeTocLines {
     return $lines
 }
 
+function New-BookPdfTocLines {
+    param(
+        [Parameter(Mandatory=$true)] [array]$ChapterEntries
+    )
+
+    $lines = @(
+        '<div class="pdf-frontmatter-toc">',
+        '# 目次',
+        ''
+    )
+
+    foreach ($chapter in $ChapterEntries) {
+        $chapterTitle = Get-PlainDisplayTitle -Name $chapter.Directory.Name
+        $chapterAnchorId = Get-ChapterAnchorId -ChapterEntry $chapter
+        $lines += "- [$chapterTitle](#$chapterAnchorId)"
+
+        foreach ($chapterFile in $chapter.Files) {
+            $sectionTitle = Get-PlainDisplayTitle -Name $chapterFile.Name
+            $sectionAnchorId = Get-SectionAnchorId -ChapterFile $chapterFile
+            $lines += "  - [$sectionTitle](#$sectionAnchorId)"
+        }
+    }
+
+    $lines += @(
+        '',
+        '</div>'
+    )
+
+    return $lines
+}
+
+function New-PdfReaderManuscript {
+    param(
+        [Parameter(Mandatory=$true)] [string]$RootPath,
+        [Parameter(Mandatory=$true)] [array]$ChapterEntries,
+        [Parameter(Mandatory=$true)] [string]$CoverPath
+    )
+
+    $manuscriptLines = New-Object 'System.Collections.Generic.List[string]'
+    $linkMap = New-BookLinkMap -ChapterEntries $ChapterEntries -CoverPath $CoverPath
+    $coverAnchorId = Get-CoverAnchorId
+
+    if (Test-Path $CoverPath) {
+        $coverHeadingAssigned = $false
+        foreach ($coverLine in (Get-CoverBodyLines -Path $CoverPath -LinkMap $linkMap)) {
+            $resolvedCoverLine = Rewrite-MarkdownLinks -Line $coverLine -SourcePath $CoverPath -LinkMap $linkMap
+            if (-not $coverHeadingAssigned -and $resolvedCoverLine -match '^\s*#\s+.+$') {
+                $resolvedCoverLine = "$resolvedCoverLine {#$coverAnchorId}"
+                $coverHeadingAssigned = $true
+            }
+
+            $manuscriptLines.Add($resolvedCoverLine)
+        }
+
+        if ($manuscriptLines.Count -gt 0 -and $manuscriptLines[$manuscriptLines.Count - 1] -ne '') {
+            $manuscriptLines.Add('')
+        }
+
+        $manuscriptLines.Add('<div class="page-break"></div>')
+        $manuscriptLines.Add('')
+    }
+
+    foreach ($tocLine in (New-BookPdfTocLines -ChapterEntries $ChapterEntries)) {
+        $manuscriptLines.Add($tocLine)
+    }
+
+    $manuscriptLines.Add('')
+    $manuscriptLines.Add('<div class="page-break"></div>')
+    $manuscriptLines.Add('')
+
+    foreach ($chapter in $ChapterEntries) {
+        $chapterTitle = Get-EpubChapterTitle -ChapterEntry $chapter
+        $chapterAnchorId = Get-ChapterAnchorId -ChapterEntry $chapter
+        $manuscriptLines.Add("# $chapterTitle {#$chapterAnchorId}")
+        $manuscriptLines.Add('')
+
+        foreach ($chapterFile in $chapter.Files) {
+            $sectionTitle = Get-EpubSectionTitle -ChapterFile $chapterFile
+            $sectionAnchorId = Get-SectionAnchorId -ChapterFile $chapterFile
+            $manuscriptLines.Add("## $sectionTitle {#$sectionAnchorId}")
+            $manuscriptLines.Add('')
+
+            foreach ($bodyLine in (Get-SectionBodyLines -Path $chapterFile.FullName -LinkMap $linkMap)) {
+                $manuscriptLines.Add($bodyLine)
+            }
+
+            $manuscriptLines.Add('')
+        }
+    }
+
+    $manuscriptPath = Join-Path ([System.IO.Path]::GetTempPath()) ("ebook.pdf.manuscript.$([System.Guid]::NewGuid().ToString('N')).md")
+    [System.IO.File]::WriteAllText($manuscriptPath, ($manuscriptLines -join [Environment]::NewLine), $Script:Utf8NoBom)
+    Write-Host "🛠 PDF 用の一時原稿を生成: $manuscriptPath" -ForegroundColor Green
+
+    return $manuscriptPath
+}
+
 function Update-ReadmeToc {
     param(
         [Parameter(Mandatory=$true)] [string]$ReadmePath,
@@ -846,7 +943,8 @@ function Invoke-BrowserRender {
         [Parameter(Mandatory=$true)] [string]$BrowserExecutable,
         [Parameter(Mandatory=$true)] [string]$NodeExecutable,
         [int]$Width = 1600,
-        [int]$Height = 2400
+        [int]$Height = 2400,
+        [bool]$ShowPageNumbers = $false
     )
 
     $renderScript = Join-Path $scriptDir 'render-html-to-pdf.cjs'
@@ -857,6 +955,9 @@ function Invoke-BrowserRender {
     $renderArgs = @($renderScript, $Mode, $InputHtml, $OutputPath, $BrowserExecutable)
     if ($Mode -eq 'image') {
         $renderArgs += @($Width.ToString(), $Height.ToString())
+    }
+    elseif ($ShowPageNumbers) {
+        $renderArgs += '--page-numbers'
     }
 
     & $NodeExecutable @renderArgs
@@ -1071,7 +1172,7 @@ function Convert-ToPdf {
 
     $htmlOutput = Join-Path $scriptDir ("$projectName.print.html")
     try {
-        Convert-ToPrintHtml -ManuscriptPath $ManuscriptPath -EffectiveMetadataFile $EffectiveMetadataFile -StyleFile $StyleFile -PrintStyleFile $PrintStyleFile -HtmlOutput $htmlOutput -IncludeTableOfContents $true
+        Convert-ToPrintHtml -ManuscriptPath $ManuscriptPath -EffectiveMetadataFile $EffectiveMetadataFile -StyleFile $StyleFile -PrintStyleFile $PrintStyleFile -HtmlOutput $htmlOutput -IncludeTableOfContents $false
 
         $browserExecutable = Get-PreferredBrowserExecutable
         if (-not $browserExecutable) {
@@ -1083,7 +1184,7 @@ function Convert-ToPdf {
             throw 'Node.js が見つかりません。PDF 生成には Node.js が必要です。'
         }
 
-        Invoke-BrowserRender -Mode 'pdf' -InputHtml $htmlOutput -OutputPath $PdfOutput -BrowserExecutable $browserExecutable -NodeExecutable $nodeCommand.Source
+        Invoke-BrowserRender -Mode 'pdf' -InputHtml $htmlOutput -OutputPath $PdfOutput -BrowserExecutable $browserExecutable -NodeExecutable $nodeCommand.Source -ShowPageNumbers $true
         Write-Host "✅ PDF 作成成功: $PdfOutput" -ForegroundColor Green
 
         New-CoverArtifacts -ManuscriptPath $ManuscriptPath -CoverPath $CoverPath -EffectiveMetadataFile $EffectiveMetadataFile -StyleFile $StyleFile -PrintStyleFile $PrintStyleFile -CoverPdfOutput $CoverPdfOutput -CoverJpgOutput $CoverJpgOutput -PdfPath $PdfOutput -KdpMetadataFile $KdpMetadataFile
@@ -1166,6 +1267,10 @@ function Main {
     $coverPath = Join-Path $projectRoot $CoverFile
 
     $manuscriptPath = New-BookManuscript -RootPath $projectRoot -ChapterEntries $chapterEntries -CoverPath $coverPath
+    $pdfManuscriptPath = $null
+    if ($Formats -contains 'pdf') {
+        $pdfManuscriptPath = New-PdfReaderManuscript -RootPath $projectRoot -ChapterEntries $chapterEntries -CoverPath $coverPath
+    }
 
     # metadata.yaml が cover-image: null などを含むとPandocがopenBinaryFileエラーを出す場合があるためクリーンコピーを作成
     $effectiveMetadataFile = $metadataFile
@@ -1199,6 +1304,9 @@ function Main {
         }
         $files | ForEach-Object { Test-ValidPath -Path $_ -Name "入力ファイル" }
         Test-ValidPath -Path $manuscriptPath -Name '一時原稿'
+        if ($null -ne $pdfManuscriptPath) {
+            Test-ValidPath -Path $pdfManuscriptPath -Name 'PDF用一時原稿'
+        }
     } catch {
         Write-Host "❌ ファイルパス検証エラー: $_" -ForegroundColor Red
         exit 1
@@ -1214,12 +1322,27 @@ function Main {
     $coverPdfOutput = Join-Path $outputDir 'cover.pdf'
     $coverJpgOutput = Join-Path $outputDir 'cover.jpg'
 
-    if ($Formats -contains 'epub') {
-        Convert-ToEpub -ManuscriptPath $manuscriptPath -EffectiveMetadataFile $effectiveMetadataFile -StyleFile $styleFile -EpubOutput $epubOutput
-    }
+    try {
+        if ($Formats -contains 'epub') {
+            Convert-ToEpub -ManuscriptPath $manuscriptPath -EffectiveMetadataFile $effectiveMetadataFile -StyleFile $styleFile -EpubOutput $epubOutput
+        }
 
-    if ($Formats -contains 'pdf') {
-        Convert-ToPdf -ManuscriptPath $manuscriptPath -EffectiveMetadataFile $effectiveMetadataFile -StyleFile $styleFile -PrintStyleFile $PrintStyleFile -PdfOutput $pdfOutput -CoverPath $coverPath -CoverPdfOutput $coverPdfOutput -CoverJpgOutput $coverJpgOutput -KdpMetadataFile $KdpMetadataFile
+        if ($Formats -contains 'pdf') {
+            $pdfSourcePath = if ($null -ne $pdfManuscriptPath) { $pdfManuscriptPath } else { $manuscriptPath }
+            Convert-ToPdf -ManuscriptPath $pdfSourcePath -EffectiveMetadataFile $effectiveMetadataFile -StyleFile $styleFile -PrintStyleFile $PrintStyleFile -PdfOutput $pdfOutput -CoverPath $coverPath -CoverPdfOutput $coverPdfOutput -CoverJpgOutput $coverJpgOutput -KdpMetadataFile $KdpMetadataFile
+        }
+    } finally {
+        if ($effectiveMetadataFile -ne $metadataFile -and (Test-Path $effectiveMetadataFile)) {
+            Remove-Item -Path $effectiveMetadataFile -Force -ErrorAction SilentlyContinue
+        }
+
+        if (Test-Path $manuscriptPath) {
+            Remove-Item -Path $manuscriptPath -Force -ErrorAction SilentlyContinue
+        }
+
+        if ($null -ne $pdfManuscriptPath -and (Test-Path $pdfManuscriptPath)) {
+            Remove-Item -Path $pdfManuscriptPath -Force -ErrorAction SilentlyContinue
+        }
     }
 
     # ============================================

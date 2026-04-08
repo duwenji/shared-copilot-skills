@@ -41,10 +41,38 @@ pre {
   border-radius: 6px;
 }
 
-img, table, pre, blockquote {
+img, svg, table, pre, blockquote, figure,
+p:has(> img:only-child) {
   break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+img,
+svg {
+  display: block;
+  max-width: 100%;
+  max-height: 7.1in;
+  height: auto;
+  margin: 0.75rem auto;
+}
+
+figure {
+  margin: 1.25rem 0;
+}
+
+h2 + figure,
+h3 + figure,
+h2 + p:has(> img:only-child),
+h3 + p:has(> img:only-child) {
+  break-before: avoid-page;
+  page-break-before: avoid;
+}
+
+.pdf-frontmatter-toc {
+  page-break-after: always;
 }
 
 nav#TOC {
+  page-break-before: always;
   page-break-after: always;
 }

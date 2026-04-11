@@ -128,7 +128,7 @@ Assembly behavior:
 - Insert chapter headings as `# 第N章 ... {#chapter-...}` unless already numbered.
 - Insert section headings as `## N.M ... {#section-...}` unless the current rendering rule suppresses a redundant first section heading.
 - The suppression rule can apply to the lead section of a multi-file chapter when its normalized title is effectively the same as the resolved chapter title.
-- In that case, the first file's body headings remain nested under a virtual `N.1` section so later section files keep unique numbering such as `N.2`, `N.3`.
+- **[v2 BREAKING]** When suppressed, the first file's body headings are rendered at the chapter body level with no section ordinal prefix (e.g., `## 3.1 本文` instead of `### 3.1.1 本文`). The virtual `N.1` nesting behavior is removed. Later section files retain standard `N.2`, `N.3` numbering.
 - Remove the first H1 from each source section body so the merged manuscript does not create multiple competing top-level headings.
 - Shift lower body headings (`##` and below in source files) so they fit the merged chapter/section hierarchy.
 - Normalize supported manual page-break markers to `<div class="page-break"></div>`.

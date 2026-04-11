@@ -785,9 +785,9 @@ function New-BookManuscript {
                 $manuscriptLines.Add('')
             }
 
-            $shouldPreserveVirtualSectionNesting = (-not $renderSectionHeading) -and $isFirstSectionInChapter -and $chapter.Files.Count -gt 1
-            $headingLevelOffset = if ($renderSectionHeading -or $shouldPreserveVirtualSectionNesting) { 1 } else { 0 }
-            $includeSectionNumberInBody = $renderSectionHeading -or $shouldPreserveVirtualSectionNesting
+            # [BREAKING v2] virtual N.1 廃止: 抑制時は headingLevelOffset=0 / IncludeSectionNumber=$false → 3.1 形式
+            $headingLevelOffset = if ($renderSectionHeading) { 1 } else { 0 }
+            $includeSectionNumberInBody = $renderSectionHeading
             foreach ($bodyLine in (Get-SectionBodyLines -Path $chapterFile.FullName -LinkMap $linkMap -ChapterFile $chapterFile -HeadingLevelOffset $headingLevelOffset -IncludeSectionNumber $includeSectionNumberInBody)) {
                 $manuscriptLines.Add($bodyLine)
             }
@@ -989,9 +989,9 @@ function New-PdfReaderManuscript {
                 $manuscriptLines.Add('')
             }
 
-            $shouldPreserveVirtualSectionNesting = (-not $renderSectionHeading) -and $isFirstSectionInChapter -and $chapter.Files.Count -gt 1
-            $headingLevelOffset = if ($renderSectionHeading -or $shouldPreserveVirtualSectionNesting) { 1 } else { 0 }
-            $includeSectionNumberInBody = $renderSectionHeading -or $shouldPreserveVirtualSectionNesting
+            # [BREAKING v2] virtual N.1 廃止: 抑制時は headingLevelOffset=0 / IncludeSectionNumber=$false → 3.1 形式
+            $headingLevelOffset = if ($renderSectionHeading) { 1 } else { 0 }
+            $includeSectionNumberInBody = $renderSectionHeading
             foreach ($bodyLine in (Get-SectionBodyLines -Path $chapterFile.FullName -LinkMap $linkMap -ChapterFile $chapterFile -HeadingLevelOffset $headingLevelOffset -IncludeSectionNumber $includeSectionNumberInBody)) {
                 $manuscriptLines.Add($bodyLine)
             }

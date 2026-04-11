@@ -124,3 +124,10 @@ nav#TOC {
   page-break-before: always;
   page-break-after: always;
 }
+
+.page-break {
+  display: block;
+  height: 0;
+  break-after: page;
+  page-break-after: always;
+}

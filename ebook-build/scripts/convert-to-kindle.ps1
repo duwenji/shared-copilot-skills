@@ -127,6 +127,94 @@ function Get-NumberedDisplayTitle {
     return "$prefix$(Get-PlainDisplayTitle -Name $Name)"
 }
 
+function Get-OrdinalNumberFromName {
+    param(
+        [Parameter(Mandatory=$true)] [string]$Name
+    )
+
+    if ($Name -match '^(?<ordinal>\d{1,3})(?:[-_.\s]|$)') {
+        return [int]$Matches['ordinal']
+    }
+
+    return $null
+}
+
+function Remove-HeadingOrdinalPrefix {
+    param(
+        [Parameter(Mandatory=$true)] [string]$Title
+    )
+
+    $normalizedTitle = $Title.Trim()
+    if ($normalizedTitle -match '^\s*付録') {
+        return $normalizedTitle
+    }
+
+    $normalizedTitle = $normalizedTitle -replace '^\s*第\s*\d+\s*章\s*[:：\-－—.\s]*', ''
+    $normalizedTitle = $normalizedTitle -replace '^\s*第\s*\d+\s*節\s*[:：\-－—.\s]*', ''
+    $normalizedTitle = $normalizedTitle -replace '^\s*\d+(?:\.\d+){1,5}\s*[:：\-－—.\s]+', ''
+    $normalizedTitle = $normalizedTitle -replace '^\s*\d+\s*[:：\-－—.\s]+', ''
+
+    return $normalizedTitle.Trim()
+}
+
+function Format-ChapterTitleWithOrdinal {
+    param(
+        [Parameter(Mandatory=$true)] [string]$Title,
+        [Parameter(Mandatory=$true)] $ChapterEntry
+    )
+
+    $normalizedTitle = $Title.Trim()
+    if ([string]::IsNullOrWhiteSpace($normalizedTitle)) {
+        return $normalizedTitle
+    }
+
+    if ($normalizedTitle -match '^\s*第\s*\d+\s*章\b' -or $normalizedTitle -match '^\s*付録\b') {
+        return $normalizedTitle
+    }
+
+    $chapterNumber = Get-OrdinalNumberFromName -Name $ChapterEntry.Directory.Name
+    if ($null -eq $chapterNumber) {
+        return $normalizedTitle
+    }
+
+    $baseTitle = Remove-HeadingOrdinalPrefix -Title $normalizedTitle
+    if ([string]::IsNullOrWhiteSpace($baseTitle)) {
+        $baseTitle = $normalizedTitle
+    }
+
+    return "第${chapterNumber}章 $baseTitle"
+}
+
+function Format-SectionTitleWithOrdinal {
+    param(
+        [Parameter(Mandatory=$true)] [string]$Title,
+        [Parameter(Mandatory=$true)] [System.IO.FileInfo]$ChapterFile
+    )
+
+    $normalizedTitle = $Title.Trim()
+    if ([string]::IsNullOrWhiteSpace($normalizedTitle)) {
+        return $normalizedTitle
+    }
+
+    if ($normalizedTitle -match '^\s*\d+(?:\.\d+){1,5}\b' -or $normalizedTitle -match '^\s*第\s*\d+\s*節\b') {
+        return $normalizedTitle
+    }
+
+    $chapterNumber = Get-OrdinalNumberFromName -Name $ChapterFile.Directory.Name
+    $sectionNumber = Get-OrdinalNumberFromName -Name $ChapterFile.Name
+    $baseTitle = Remove-HeadingOrdinalPrefix -Title $normalizedTitle
+
+    if ([string]::IsNullOrWhiteSpace($baseTitle)) {
+        $baseTitle = $normalizedTitle
+    }
+
+    if ($null -eq $chapterNumber -or $null -eq $sectionNumber) {
+        return $baseTitle
+    }
+
+    return "$chapterNumber.$sectionNumber $baseTitle"
+}
+
 function Get-ChapterReadmePath {
     param(
         [Parameter(Mandatory=$true)] [System.IO.DirectoryInfo]$ChapterDirectory
@@ -227,6 +315,13 @@ function Get-ChapterDisplayTitle {
         }
     }
 
+    if ($sectionTitles.Count -gt 0) {
+        $firstSectionTitle = $sectionTitles[0]
+        if ($firstSectionTitle -match '^\s*第\s*\d+\s*章\b') {
+            return $firstSectionTitle
+        }
+    }
+
     if ($sectionTitles.Count -eq 1) {
         return $sectionTitles[0]
     }
@@ -262,7 +357,8 @@ function Get-BookChapterTitle {
         [Parameter(Mandatory=$true)] $ChapterEntry
     )
 
-    return Get-ChapterDisplayTitle -ChapterEntry $ChapterEntry
+    $chapterTitle = Get-ChapterDisplayTitle -ChapterEntry $ChapterEntry
+    return Format-ChapterTitleWithOrdinal -Title $chapterTitle -ChapterEntry $ChapterEntry
 }
 
 function Get-BookSectionTitle {
@@ -270,7 +366,8 @@ function Get-BookSectionTitle {
         [Parameter(Mandatory=$true)] [System.IO.FileInfo]$ChapterFile
     )
 
-    return Get-SectionDisplayTitle -ChapterFile $ChapterFile
+    $sectionTitle = Get-SectionDisplayTitle -ChapterFile $ChapterFile
+    return Format-SectionTitleWithOrdinal -Title $sectionTitle -ChapterFile $ChapterFile
 }
 
 function Get-EpubChapterTitle {
@@ -278,7 +375,8 @@ function Get-EpubChapterTitle {
         [Parameter(Mandatory=$true)] $ChapterEntry
     )
 
-    return Get-ChapterDisplayTitle -ChapterEntry $ChapterEntry
+    $chapterTitle = Get-ChapterDisplayTitle -ChapterEntry $ChapterEntry
+    return Format-ChapterTitleWithOrdinal -Title $chapterTitle -ChapterEntry $ChapterEntry
 }
 
 function Get-EpubSectionTitle {
@@ -286,7 +384,8 @@ function Get-EpubSectionTitle {
         [Parameter(Mandatory=$true)] [System.IO.FileInfo]$ChapterFile
     )
 
-    return Get-SectionDisplayTitle -ChapterFile $ChapterFile
+    $sectionTitle = Get-SectionDisplayTitle -ChapterFile $ChapterFile
+    return Format-SectionTitleWithOrdinal -Title $sectionTitle -ChapterFile $ChapterFile
 }
 
 function New-AnchorId {
@@ -444,28 +543,125 @@ function Rewrite-MarkdownLinks {
 
 function Shift-MarkdownHeadingLine {
     param(
-        [Parameter(Mandatory=$true)] [string]$Line
+        [Parameter(Mandatory=$true)] [string]$Line,
+        [int]$LevelOffset = 1
     )
 
     if ($Line -notmatch '^(?<indent>\s*)(?<markers>#{1,6})(?<spacing>\s+)(?<title>.+)$') {
         return $Line
     }
 
-    $shiftedLevel = [Math]::Min(6, $Matches['markers'].Length + 1)
+    $shiftedLevel = [Math]::Min(6, [Math]::Max(1, $Matches['markers'].Length + $LevelOffset))
     $shiftedMarkers = '#' * $shiftedLevel
     return "$($Matches['indent'])$shiftedMarkers$($Matches['spacing'])$($Matches['title'])"
+}
+
+function Convert-BodyHeadingLine {
+    param(
+        [Parameter(Mandatory=$true)] [string]$Line,
+        [Parameter(Mandatory=$true)] [System.IO.FileInfo]$ChapterFile,
+        [Parameter(Mandatory=$true)] [hashtable]$HeadingState,
+        [int]$HeadingLevelOffset = 1,
+        [bool]$IncludeSectionNumber = $true
+    )
+
+    if ($Line -notmatch '^(?<indent>\s*)(?<markers>#{1,6})(?<spacing>\s+)(?<title>.+)$') {
+        return $Line
+    }
+
+    $indent = $Matches['indent']
+    $originalLevel = $Matches['markers'].Length
+    $spacing = $Matches['spacing']
+    $titlePart = $Matches['title']
+    $shiftedLevel = [Math]::Min(6, [Math]::Max(1, $originalLevel + $HeadingLevelOffset))
+    $shiftedMarkers = '#' * $shiftedLevel
+
+    if ($originalLevel -lt 2) {
+        return "$indent$shiftedMarkers$spacing$titlePart"
+    }
+
+    foreach ($level in 2..6) {
+        if (-not $HeadingState.ContainsKey("Level$level")) {
+            $HeadingState["Level$level"] = 0
+        }
+    }
+
+    $HeadingState["Level$originalLevel"] = [int]$HeadingState["Level$originalLevel"] + 1
+    if ($originalLevel -lt 6) {
+        for ($level = $originalLevel + 1; $level -le 6; $level++) {
+            $HeadingState["Level$level"] = 0
+        }
+    }
+
+    $titleText = $titlePart
+    $attributeSuffix = ''
+    if ($titlePart -match '^(?<text>.*?)(?<attrs>\s+\{[^}]+\}\s*)$') {
+        $titleText = $Matches['text']
+        $attributeSuffix = $Matches['attrs']
+    }
+
+    $normalizedTitle = $titleText.Trim()
+    if ($normalizedTitle -match '^\s*(?:第\s*\d+\s*章|第\s*\d+\s*節|\d+(?:\.\d+){1,6})\b') {
+        return "$indent$shiftedMarkers$spacing$normalizedTitle$attributeSuffix"
+    }
+
+    $chapterNumber = Get-OrdinalNumberFromName -Name $ChapterFile.Directory.Name
+    if ($null -eq $chapterNumber) {
+        return "$indent$shiftedMarkers$spacing$normalizedTitle$attributeSuffix"
+    }
+
+    $numberParts = New-Object 'System.Collections.Generic.List[string]'
+    $numberParts.Add([string]$chapterNumber)
+
+    if ($IncludeSectionNumber) {
+        $sectionNumber = Get-OrdinalNumberFromName -Name $ChapterFile.Name
+        if ($null -ne $sectionNumber) {
+            $numberParts.Add([string]$sectionNumber)
+        }
+    }
+
+    for ($level = 2; $level -le $originalLevel; $level++) {
+        $counterValue = [int]$HeadingState["Level$level"]
+        if ($counterValue -gt 0) {
+            $numberParts.Add([string]$counterValue)
+        }
+    }
+
+    $baseTitle = Remove-HeadingOrdinalPrefix -Title $normalizedTitle
+    if ([string]::IsNullOrWhiteSpace($baseTitle)) {
+        $baseTitle = $normalizedTitle
+    }
+
+    $numberedTitle = "$($numberParts.ToArray() -join '.') $baseTitle"
+    return "$indent$shiftedMarkers$spacing$numberedTitle$attributeSuffix"
+}
+
+function Convert-ManualPageBreakLine {
+    param(
+        [Parameter(Mandatory=$true)] [AllowEmptyString()] [string]$Line
+    )
+
+    if ($Line -match '^\s*(<!--\s*(?:pagebreak|page-break|newpage|clearpage|ebook:pagebreak)\s*-->|\\(?:newpage|pagebreak|clearpage)|<div\s+class=["'']page-break["'']\s*>\s*</div>)\s*$') {
+        return '<div class="page-break"></div>'
+    }
+
+    return $Line
 }
 
 function Get-SectionBodyLines {
     param(
         [Parameter(Mandatory=$true)] [string]$Path,
-        [Parameter(Mandatory=$true)] [hashtable]$LinkMap
+        [Parameter(Mandatory=$true)] [hashtable]$LinkMap,
+        [Parameter(Mandatory=$true)] [System.IO.FileInfo]$ChapterFile,
+        [int]$HeadingLevelOffset = 1,
+        [bool]$IncludeSectionNumber = $true
     )
 
     $sourceLines = Get-Content -Path $Path -Encoding UTF8
     $bodyLines = New-Object 'System.Collections.Generic.List[string]'
     $removedFirstHeading = $false
     $insideFence = $false
+    $headingState = @{}
 
     foreach ($line in $sourceLines) {
         if ($line -match '^\s*(`{3,}|~{3,})') {
@@ -480,10 +676,11 @@ function Get-SectionBodyLines {
         }
 
         if (-not $insideFence -and $line -match '^\s*#{2,6}\s+') {
-            $line = Shift-MarkdownHeadingLine -Line $line
+            $line = Convert-BodyHeadingLine -Line $line -ChapterFile $ChapterFile -HeadingState $headingState -HeadingLevelOffset $HeadingLevelOffset -IncludeSectionNumber $IncludeSectionNumber
         }
 
         if (-not $insideFence) {
+            $line = Convert-ManualPageBreakLine -Line $line
             $line = Rewrite-MarkdownLinks -Line $line -SourcePath $Path -LinkMap $LinkMap
         }
 
@@ -516,6 +713,7 @@ function Get-CoverBodyLines {
         }
 
         if (-not $insideFence) {
+            $line = Convert-ManualPageBreakLine -Line $line
             $line = Rewrite-MarkdownLinks -Line $line -SourcePath $Path -LinkMap $LinkMap
         }
 
@@ -551,9 +749,18 @@ function New-BookManuscript {
         if ($manuscriptLines.Count -gt 0 -and $manuscriptLines[$manuscriptLines.Count - 1] -ne '') {
             $manuscriptLines.Add('')
         }
+
+        $manuscriptLines.Add('<div class="page-break"></div>')
+        $manuscriptLines.Add('')
     }
 
+    $chapterIndex = 0
     foreach ($chapter in $ChapterEntries) {
+        if ($chapterIndex -gt 0) {
+            $manuscriptLines.Add('<div class="page-break"></div>')
+            $manuscriptLines.Add('')
+        }
+
         $chapterTitle = Get-EpubChapterTitle -ChapterEntry $chapter
         $chapterAnchorId = Get-ChapterAnchorId -ChapterEntry $chapter
         $manuscriptLines.Add("# $chapterTitle {#$chapterAnchorId}")
@@ -562,15 +769,33 @@ function New-BookManuscript {
         foreach ($chapterFile in $chapter.Files) {
             $sectionTitle = Get-EpubSectionTitle -ChapterFile $chapterFile
             $sectionAnchorId = Get-SectionAnchorId -ChapterFile $chapterFile
-            $manuscriptLines.Add("## $sectionTitle {#$sectionAnchorId}")
-            $manuscriptLines.Add('')
+            $renderSectionHeading = $true
+            $isFirstSectionInChapter = ($chapter.Files.Count -gt 0 -and $chapterFile.FullName -eq $chapter.Files[0].FullName)
 
-            foreach ($bodyLine in (Get-SectionBodyLines -Path $chapterFile.FullName -LinkMap $linkMap)) {
+            if ($chapter.Files.Count -eq 1 -or $isFirstSectionInChapter) {
+                $normalizedChapterTitle = Remove-HeadingOrdinalPrefix -Title $chapterTitle
+                $normalizedSectionTitle = Remove-HeadingOrdinalPrefix -Title $sectionTitle
+                if (-not [string]::IsNullOrWhiteSpace($normalizedChapterTitle) -and $normalizedChapterTitle -eq $normalizedSectionTitle) {
+                    $renderSectionHeading = $false
+                }
+            }
+
+            if ($renderSectionHeading) {
+                $manuscriptLines.Add("## $sectionTitle {#$sectionAnchorId}")
+                $manuscriptLines.Add('')
+            }
+
+            $shouldPreserveVirtualSectionNesting = (-not $renderSectionHeading) -and $isFirstSectionInChapter -and $chapter.Files.Count -gt 1
+            $headingLevelOffset = if ($renderSectionHeading -or $shouldPreserveVirtualSectionNesting) { 1 } else { 0 }
+            $includeSectionNumberInBody = $renderSectionHeading -or $shouldPreserveVirtualSectionNesting
+            foreach ($bodyLine in (Get-SectionBodyLines -Path $chapterFile.FullName -LinkMap $linkMap -ChapterFile $chapterFile -HeadingLevelOffset $headingLevelOffset -IncludeSectionNumber $includeSectionNumberInBody)) {
                 $manuscriptLines.Add($bodyLine)
             }
 
             $manuscriptLines.Add('')
         }
+
+        $chapterIndex += 1
     }
 
     $manuscriptPath = Join-Path ([System.IO.Path]::GetTempPath()) ("clean-architecture.manuscript.$([System.Guid]::NewGuid().ToString('N')).md")
@@ -733,7 +958,13 @@ function New-PdfReaderManuscript {
     $manuscriptLines.Add('<div class="page-break"></div>')
     $manuscriptLines.Add('')
 
+    $chapterIndex = 0
     foreach ($chapter in $ChapterEntries) {
+        if ($chapterIndex -gt 0) {
+            $manuscriptLines.Add('<div class="page-break"></div>')
+            $manuscriptLines.Add('')
+        }
+
         $chapterTitle = Get-EpubChapterTitle -ChapterEntry $chapter
         $chapterAnchorId = Get-ChapterAnchorId -ChapterEntry $chapter
         $manuscriptLines.Add("# $chapterTitle {#$chapterAnchorId}")
@@ -742,15 +973,33 @@ function New-PdfReaderManuscript {
         foreach ($chapterFile in $chapter.Files) {
             $sectionTitle = Get-EpubSectionTitle -ChapterFile $chapterFile
             $sectionAnchorId = Get-SectionAnchorId -ChapterFile $chapterFile
-            $manuscriptLines.Add("## $sectionTitle {#$sectionAnchorId}")
-            $manuscriptLines.Add('')
+            $renderSectionHeading = $true
+            $isFirstSectionInChapter = ($chapter.Files.Count -gt 0 -and $chapterFile.FullName -eq $chapter.Files[0].FullName)
 
-            foreach ($bodyLine in (Get-SectionBodyLines -Path $chapterFile.FullName -LinkMap $linkMap)) {
+            if ($chapter.Files.Count -eq 1 -or $isFirstSectionInChapter) {
+                $normalizedChapterTitle = Remove-HeadingOrdinalPrefix -Title $chapterTitle
+                $normalizedSectionTitle = Remove-HeadingOrdinalPrefix -Title $sectionTitle
+                if (-not [string]::IsNullOrWhiteSpace($normalizedChapterTitle) -and $normalizedChapterTitle -eq $normalizedSectionTitle) {
+                    $renderSectionHeading = $false
+                }
+            }
+
+            if ($renderSectionHeading) {
+                $manuscriptLines.Add("## $sectionTitle {#$sectionAnchorId}")
+                $manuscriptLines.Add('')
+            }
+
+            $shouldPreserveVirtualSectionNesting = (-not $renderSectionHeading) -and $isFirstSectionInChapter -and $chapter.Files.Count -gt 1
+            $headingLevelOffset = if ($renderSectionHeading -or $shouldPreserveVirtualSectionNesting) { 1 } else { 0 }
+            $includeSectionNumberInBody = $renderSectionHeading -or $shouldPreserveVirtualSectionNesting
+            foreach ($bodyLine in (Get-SectionBodyLines -Path $chapterFile.FullName -LinkMap $linkMap -ChapterFile $chapterFile -HeadingLevelOffset $headingLevelOffset -IncludeSectionNumber $includeSectionNumberInBody)) {
                 $manuscriptLines.Add($bodyLine)
             }
 
             $manuscriptLines.Add('')
         }
+
+        $chapterIndex += 1
     }
 
     $manuscriptPath = Join-Path ([System.IO.Path]::GetTempPath()) ("ebook.pdf.manuscript.$([System.Guid]::NewGuid().ToString('N')).md")

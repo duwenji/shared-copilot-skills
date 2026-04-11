@@ -39,3 +39,19 @@ Generated outputs are written to `ebook-output/` and can include:
 - `*.epub`
 - `*.pdf`
 - `*-kdp-registration.md`
+
+## Manual page breaks in source Markdown
+
+To force a page break before a major section in the generated ebook, add either of these markers on its own line:
+
+```markdown
+<!-- pagebreak -->
+```
+
+or
+
+```markdown
+<div class="page-break"></div>
+```
+
+The shared build normalizes both forms for EPUB and PDF output.

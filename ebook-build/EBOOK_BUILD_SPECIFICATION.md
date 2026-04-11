@@ -4,6 +4,8 @@
 
 Provide a reusable, agent-friendly build workflow for markdown repositories that follow numbered chapter conventions and need EPUB, PDF, a preserved merged manuscript at `projectName.manuscript.md`, fixed-name `cover.pdf` / `cover.jpg`, and KDP registration Markdown artifacts.
 
+See also: `docs/GENERATION-PIPELINE.md` for the current end-to-end execution flow and Mermaid diagrams.
+
 ## Canonical Consumer Config Contract
 
 Preferred JSON shape:
@@ -79,7 +81,10 @@ Given `sourceRoot`:
 - Cover file: `coverFile` (default `00-COVER.md`, optional) and treated as outside the chapter sequence
 - Root `README.md`: optional, copied into staging when present so converter-side TOC updates remain safe
 - Nested section subdirectories are out of scope for this workflow
-- Display titles are derived from folder and file slugs, with the leading numeric prefix preserved in EPUB headings
+- Display titles prefer markdown H1 text (`README.md` for chapter-level titles, section file H1 for section-level titles) and fall back to slug conversion only when no suitable H1 is available
+- In a multi-file chapter without `README.md`, if the lead section already begins with a chapter-style H1 such as `第3章 ...`, that heading may be promoted to the chapter title
+- The merged manuscript formats chapters as `第N章 ...` and sections as `N.M ...` unless the source heading already includes an ordinal prefix
+- Ordinal values come directly from the numeric directory/file prefixes; if a repo intentionally uses `00-*`, the output can legitimately contain `第0章`, `0.1`, `2.0`, and similar zero-based labels
 
 ## Staging Contract
 
@@ -101,6 +106,28 @@ The runner creates an isolated temporary workspace:
 8. Optionally generate `projectName-kdp-registration.md` from the base metadata and optional KDP metadata.
 9. Fail if any requested artifact was not produced.
 10. Clean temporary workspace unless `preserveTemp` is enabled.
+
+## Merged Manuscript Assembly Contract
+
+Before final format conversion, the staged converter assembles all chapter and section markdown into one normalized manuscript.
+
+Assembly behavior:
+- Build a sorted chapter/section list from `chapterDirPattern` and `chapterFilePattern`.
+- Generate a link map from original file paths to internal anchor IDs.
+- Add the optional cover block first and assign the cover anchor.
+- Insert chapter headings as `# 第N章 ... {#chapter-...}` unless already numbered.
+- Insert section headings as `## N.M ... {#section-...}` unless the current rendering rule suppresses a redundant first section heading.
+- The suppression rule can apply to the lead section of a multi-file chapter when its normalized title is effectively the same as the resolved chapter title.
+- In that case, the first file's body headings remain nested under a virtual `N.1` section so later section files keep unique numbering such as `N.2`, `N.3`.
+- Remove the first H1 from each source section body so the merged manuscript does not create multiple competing top-level headings.
+- Shift lower body headings (`##` and below in source files) so they fit the merged chapter/section hierarchy.
+- Normalize supported manual page-break markers to `<div class="page-break"></div>`.
+- Rewrite relative markdown links to anchor links using the generated link map.
+- Write the result to the preserved `projectName.manuscript.md` artifact.
+
+There are two closely related assembly paths:
+- `New-BookManuscript` for the base manuscript and EPUB flow
+- `New-PdfReaderManuscript` for the PDF flow, which additionally inserts a frontmatter TOC block before the chapter body
 
 ## Optional Mermaid Preprocessing
 

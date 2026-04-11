@@ -336,9 +336,12 @@ a.footnote-ref {
 
 /* ページブレークコントロール */
 .page-break {
-  page-break-after: always;
+  display: block;
+  height: 0;
   margin: 0;
   padding: 0;
+  break-after: page;
+  page-break-after: always;
 }
 
 /* Kindleの画面サイズに対応 */

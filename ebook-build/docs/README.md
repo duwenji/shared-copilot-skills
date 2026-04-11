@@ -71,6 +71,13 @@ After each build, verify:
 
 Focus on TOC integrity, heading hierarchy, internal links, chapter numbering, code block rendering, and Mermaid image rendering when enabled.
 
+## Architecture and debugging references
+
+Use these documents together when investigating generation behavior:
+
+- `../EBOOK_BUILD_SPECIFICATION.md` — contract, config, output expectations, and manuscript assembly rules
+- `./GENERATION-PIPELINE.md` — current end-to-end pipeline with Mermaid sequence and flow diagrams, including the multi-file merge process
+
 ## Optional Mermaid preprocessing
 
 The shared runner can convert fenced `mermaid` blocks into static images before `pandoc` generates the EPUB.
@@ -100,7 +107,8 @@ Use `png` only when a target EPUB reader has SVG rendering issues.
 - Sections are discovered only from files directly under each chapter directory.
 - `00-COVER.md` is treated as an optional cover file outside the chapter sequence.
 - If `sourceRoot` does not contain chapter directories, the runner falls back to `sourceRoot/docs`.
-- Chapter and section display titles are derived from folder and file names, not markdown H1 headings.
+- Chapter display titles prefer the first H1 from chapter `README.md`, then fall back to a single section file H1, and finally to the directory slug.
+- Section display titles prefer the first H1 from the section file and fall back to the file slug when no H1 is present.
 
 ## Troubleshooting
 

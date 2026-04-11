@@ -35,6 +35,8 @@ function renderPdf(inputPath, outputPath, browserPath, showPageNumbers = false) 
       '--virtual-time-budget=3000',
       '--no-first-run',
       '--no-default-browser-check',
+      '--export-tagged-pdf',
+      '--generate-pdf-document-outline',
       `--user-data-dir=${profileDir}`,
       `--print-to-pdf=${outputPath}`,
       fileUrl

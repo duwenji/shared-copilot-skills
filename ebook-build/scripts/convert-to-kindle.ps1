@@ -40,10 +40,11 @@ $Formats = @(
 
 # UTF-8 BOM なしエンコーディング（共通）
 $Script:Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+$Script:MarkdownHeadingCache = @{}
 
 # ============================================
 # タイトル解決ユーティリティ
-#   フォルダ名/ファイル名スラグを章節タイトルの唯一の決定源にする
+#   Markdown の実見出しを優先し、未設定時のみスラグへフォールバックする
 # ============================================
 
 function Convert-SlugToTitle {
@@ -139,12 +140,129 @@ function Get-ChapterReadmePath {
     return $null
 }
 
+function Get-MarkdownFirstHeadingText {
+    param(
+        [Parameter(Mandatory=$true)] [string]$Path
+    )
+
+    try {
+        $resolvedPath = (Resolve-Path $Path -ErrorAction Stop).ProviderPath
+    }
+    catch {
+        return $null
+    }
+
+    if ($Script:MarkdownHeadingCache.ContainsKey($resolvedPath)) {
+        return $Script:MarkdownHeadingCache[$resolvedPath]
+    }
+
+    $headingText = $null
+    $insideFence = $false
+    foreach ($line in (Get-Content -Path $resolvedPath -Encoding UTF8)) {
+        if ($line -match '^\s*(`{3,}|~{3,})') {
+            $insideFence = -not $insideFence
+            continue
+        }
+
+        if (-not $insideFence -and $line -match '^\s*#\s+(?<title>.+?)\s*$') {
+            $headingText = $Matches['title']
+            $headingText = $headingText -replace '\s*\{#[^}]+\}\s*$', ''
+            $headingText = $headingText.Trim()
+            break
+        }
+    }
+
+    $Script:MarkdownHeadingCache[$resolvedPath] = $headingText
+    return $headingText
+}
+
+function Get-CoverDisplayTitle {
+    param(
+        [Parameter(Mandatory=$true)] [string]$CoverPath
+    )
+
+    $coverTitle = $null
+    if (Test-Path $CoverPath) {
+        $coverTitle = Get-MarkdownFirstHeadingText -Path $CoverPath
+    }
+
+    if ([string]::IsNullOrWhiteSpace($coverTitle)) {
+        $coverTitle = Get-PlainDisplayTitle -Name (Split-Path -Leaf $CoverPath)
+    }
+
+    return $coverTitle
+}
+
+function Get-SectionDisplayTitle {
+    param(
+        [Parameter(Mandatory=$true)] [System.IO.FileInfo]$ChapterFile
+    )
+
+    $sectionTitle = Get-MarkdownFirstHeadingText -Path $ChapterFile.FullName
+    if ([string]::IsNullOrWhiteSpace($sectionTitle)) {
+        $sectionTitle = Get-PlainDisplayTitle -Name $ChapterFile.Name
+    }
+
+    return $sectionTitle
+}
+
+function Get-ChapterDisplayTitle {
+    param(
+        [Parameter(Mandatory=$true)] $ChapterEntry
+    )
+
+    $chapterReadmePath = Get-ChapterReadmePath -ChapterDirectory $ChapterEntry.Directory
+    if ($chapterReadmePath) {
+        $chapterTitle = Get-MarkdownFirstHeadingText -Path $chapterReadmePath
+        if (-not [string]::IsNullOrWhiteSpace($chapterTitle)) {
+            return $chapterTitle
+        }
+    }
+
+    $sectionTitles = @()
+    foreach ($chapterFile in $ChapterEntry.Files) {
+        $sectionTitle = Get-SectionDisplayTitle -ChapterFile $chapterFile
+        if (-not [string]::IsNullOrWhiteSpace($sectionTitle)) {
+            $sectionTitles += $sectionTitle
+        }
+    }
+
+    if ($sectionTitles.Count -eq 1) {
+        return $sectionTitles[0]
+    }
+
+    $appendixTitles = @($sectionTitles | Where-Object { $_ -match '^\s*付録' })
+    if ($sectionTitles.Count -gt 1 -and $appendixTitles.Count -eq $sectionTitles.Count) {
+        return '付録'
+    }
+
+    return Get-PlainDisplayTitle -Name $ChapterEntry.Directory.Name
+}
+
+function Get-TocDepthFromMetadata {
+    param(
+        [string]$MetadataPath,
+        [int]$DefaultDepth = 2
+    )
+
+    if ([string]::IsNullOrWhiteSpace($MetadataPath) -or -not (Test-Path $MetadataPath)) {
+        return $DefaultDepth
+    }
+
+    $metadataText = Get-Content -Path $MetadataPath -Raw -Encoding UTF8
+    if ($metadataText -match '(?m)^\s*toc-depth\s*:\s*(\d+)\s*$') {
+        return [Math]::Max(1, [int]$Matches[1])
+    }
+
+    return $DefaultDepth
+}
+
 function Get-BookChapterTitle {
     param(
         [Parameter(Mandatory=$true)] $ChapterEntry
     )
 
-    return Get-PlainDisplayTitle -Name $ChapterEntry.Directory.Name
+    return Get-ChapterDisplayTitle -ChapterEntry $ChapterEntry
 }
 
 function Get-BookSectionTitle {
@@ -152,7 +270,7 @@ function Get-BookSectionTitle {
         [Parameter(Mandatory=$true)] [System.IO.FileInfo]$ChapterFile
     )
 
-    return Get-PlainDisplayTitle -Name $ChapterFile.Name
+    return Get-SectionDisplayTitle -ChapterFile $ChapterFile
 }
 
 function Get-EpubChapterTitle {
@@ -160,7 +278,7 @@ function Get-EpubChapterTitle {
         [Parameter(Mandatory=$true)] $ChapterEntry
     )
 
-    return Get-PlainDisplayTitle -Name $ChapterEntry.Directory.Name
+    return Get-ChapterDisplayTitle -ChapterEntry $ChapterEntry
 }
 
 function Get-EpubSectionTitle {
@@ -168,7 +286,7 @@ function Get-EpubSectionTitle {
         [Parameter(Mandatory=$true)] [System.IO.FileInfo]$ChapterFile
     )
 
-    return Get-PlainDisplayTitle -Name $ChapterFile.Name
+    return Get-SectionDisplayTitle -ChapterFile $ChapterFile
 }
 
 function New-AnchorId {
@@ -521,17 +639,17 @@ function New-ReadmeTocLines {
 
     if (Test-Path $CoverPath) {
         $coverItem = Get-Item $CoverPath
-        $coverTitle = Get-PlainDisplayTitle -Name $coverItem.Name
+        $coverTitle = Get-CoverDisplayTitle -CoverPath $CoverPath
         $lines += "- [$coverTitle](./$($coverItem.Name))"
     }
 
     foreach ($chapter in $ChapterEntries) {
         $chapterName = $chapter.Directory.Name
-        $chapterTitle = Get-PlainDisplayTitle -Name $chapterName
+        $chapterTitle = Get-BookChapterTitle -ChapterEntry $chapter
         $lines += "- [$chapterTitle](./$chapterName/)"
 
         foreach ($chapterFile in $chapter.Files) {
-            $fileTitle = Get-PlainDisplayTitle -Name $chapterFile.Name
+            $fileTitle = Get-BookSectionTitle -ChapterFile $chapterFile
             $lines += "  - [$fileTitle](./$chapterName/$($chapterFile.Name))"
         }
     }
@@ -542,7 +660,8 @@ function New-ReadmeTocLines {
 
 function New-BookPdfTocLines {
     param(
-        [Parameter(Mandatory=$true)] [array]$ChapterEntries
+        [Parameter(Mandatory=$true)] [array]$ChapterEntries,
+        [int]$MaxDepth = 2
     )
 
     $lines = @(
@@ -552,14 +671,16 @@ function New-BookPdfTocLines {
     )
 
     foreach ($chapter in $ChapterEntries) {
-        $chapterTitle = Get-PlainDisplayTitle -Name $chapter.Directory.Name
+        $chapterTitle = Get-BookChapterTitle -ChapterEntry $chapter
         $chapterAnchorId = Get-ChapterAnchorId -ChapterEntry $chapter
         $lines += "- [$chapterTitle](#$chapterAnchorId)"
 
-        foreach ($chapterFile in $chapter.Files) {
-            $sectionTitle = Get-PlainDisplayTitle -Name $chapterFile.Name
-            $sectionAnchorId = Get-SectionAnchorId -ChapterFile $chapterFile
-            $lines += "  - [$sectionTitle](#$sectionAnchorId)"
+        if ($MaxDepth -ge 2) {
+            foreach ($chapterFile in $chapter.Files) {
+                $sectionTitle = Get-BookSectionTitle -ChapterFile $chapterFile
+                $sectionAnchorId = Get-SectionAnchorId -ChapterFile $chapterFile
+                $lines += "  - [$sectionTitle](#$sectionAnchorId)"
+            }
         }
     }
 
@@ -575,12 +696,14 @@ function New-PdfReaderManuscript {
     param(
         [Parameter(Mandatory=$true)] [string]$RootPath,
         [Parameter(Mandatory=$true)] [array]$ChapterEntries,
-        [Parameter(Mandatory=$true)] [string]$CoverPath
+        [Parameter(Mandatory=$true)] [string]$CoverPath,
+        [string]$MetadataFile
     )
 
     $manuscriptLines = New-Object 'System.Collections.Generic.List[string]'
     $linkMap = New-BookLinkMap -ChapterEntries $ChapterEntries -CoverPath $CoverPath
     $coverAnchorId = Get-CoverAnchorId
+    $tocDepth = Get-TocDepthFromMetadata -MetadataPath $MetadataFile
 
     if (Test-Path $CoverPath) {
         $coverHeadingAssigned = $false
@@ -602,7 +725,7 @@ function New-PdfReaderManuscript {
         $manuscriptLines.Add('')
     }
 
-    foreach ($tocLine in (New-BookPdfTocLines -ChapterEntries $ChapterEntries)) {
+    foreach ($tocLine in (New-BookPdfTocLines -ChapterEntries $ChapterEntries -MaxDepth $tocDepth)) {
         $manuscriptLines.Add($tocLine)
     }
 
@@ -1401,7 +1524,7 @@ function Main {
     $manuscriptPath = New-BookManuscript -RootPath $projectRoot -ChapterEntries $chapterEntries -CoverPath $coverPath
     $pdfManuscriptPath = $null
     if ($Formats -contains 'pdf') {
-        $pdfManuscriptPath = New-PdfReaderManuscript -RootPath $projectRoot -ChapterEntries $chapterEntries -CoverPath $coverPath
+        $pdfManuscriptPath = New-PdfReaderManuscript -RootPath $projectRoot -ChapterEntries $chapterEntries -CoverPath $coverPath -MetadataFile $metadataFile
     }
 
     # metadata.yaml が cover-image: null などを含むとPandocがopenBinaryFileエラーを出す場合があるためクリーンコピーを作成

@@ -579,6 +579,29 @@ $convertRaw = Get-Content -Path $stageConvertScript -Raw -Encoding UTF8
 $convertRaw = $convertRaw -replace '\$response = Read-Host', "`$response = 'n'"
 $convertRaw = $convertRaw -replace 'Invoke-Item \$outputDir', '# output auto-open disabled by ebook-build skill runner'
 
+function Copy-ArtifactSafely {
+    param(
+        [Parameter(Mandatory=$true)] [string]$SourcePath,
+        [Parameter(Mandatory=$true)] [string]$DestinationPath,
+        [Parameter(Mandatory=$true)] [string]$ArtifactLabel
+    )
+
+    try {
+        Copy-Item -Path $SourcePath -Destination $DestinationPath -Force
+        return $DestinationPath
+    }
+    catch [System.IO.IOException] {
+        $destinationDirectory = Split-Path -Parent $DestinationPath
+        $destinationBaseName = [System.IO.Path]::GetFileNameWithoutExtension($DestinationPath)
+        $destinationExtension = [System.IO.Path]::GetExtension($DestinationPath)
+        $alternatePath = Join-Path $destinationDirectory ("{0}-{1}{2}" -f $destinationBaseName, (Get-Date -Format 'yyyyMMdd-HHmmss'), $destinationExtension)
+
+        Copy-Item -Path $SourcePath -Destination $alternatePath -Force
+        Write-Warning ("{0} could not overwrite '{1}' because it is in use. Saved the new artifact to '{2}' instead." -f $ArtifactLabel, $DestinationPath, $alternatePath)
+        return $alternatePath
+    }
+}
+
 # Windows PowerShell on GitHub Actions can misread UTF-8 without BOM after rewriting
 # the staged script. Write a UTF-8 BOM so Unicode strings parse reliably in CI.
 $utf8Bom = New-Object System.Text.UTF8Encoding($true)
@@ -613,7 +636,7 @@ if ($documentFormats -contains 'epub') {
     }
 
     $epubDestinationPath = Join-Path $OutputDir ("$ProjectName.epub")
-    Copy-Item -Path $producedEpub.FullName -Destination $epubDestinationPath -Force
+    $epubDestinationPath = Copy-ArtifactSafely -SourcePath $producedEpub.FullName -DestinationPath $epubDestinationPath -ArtifactLabel 'EPUB artifact'
     $copiedArtifacts.Add($epubDestinationPath)
     Write-Host "Generated: $epubDestinationPath" -ForegroundColor Green
 }
@@ -627,7 +650,7 @@ if ($documentFormats -contains 'pdf') {
     }
 
     $pdfDestinationPath = Join-Path $OutputDir ("$ProjectName.pdf")
-    Copy-Item -Path $producedPdf.FullName -Destination $pdfDestinationPath -Force
+    $pdfDestinationPath = Copy-ArtifactSafely -SourcePath $producedPdf.FullName -DestinationPath $pdfDestinationPath -ArtifactLabel 'PDF artifact'
     $copiedArtifacts.Add($pdfDestinationPath)
     Write-Host "Generated: $pdfDestinationPath" -ForegroundColor Green
 
@@ -637,7 +660,7 @@ if ($documentFormats -contains 'pdf') {
     }
 
     $coverPdfDestinationPath = Join-Path $OutputDir 'cover.pdf'
-    Copy-Item -Path $coverPdfSourcePath -Destination $coverPdfDestinationPath -Force
+    $coverPdfDestinationPath = Copy-ArtifactSafely -SourcePath $coverPdfSourcePath -DestinationPath $coverPdfDestinationPath -ArtifactLabel 'Cover PDF artifact'
     $copiedArtifacts.Add($coverPdfDestinationPath)
     Write-Host "Generated: $coverPdfDestinationPath" -ForegroundColor Green
 
@@ -647,7 +670,7 @@ if ($documentFormats -contains 'pdf') {
     }
 
     $coverJpgDestinationPath = Join-Path $OutputDir 'cover.jpg'
-    Copy-Item -Path $coverJpgSourcePath -Destination $coverJpgDestinationPath -Force
+    $coverJpgDestinationPath = Copy-ArtifactSafely -SourcePath $coverJpgSourcePath -DestinationPath $coverJpgDestinationPath -ArtifactLabel 'Cover JPEG artifact'
     $copiedArtifacts.Add($coverJpgDestinationPath)
     Write-Host "Generated: $coverJpgDestinationPath" -ForegroundColor Green
 }

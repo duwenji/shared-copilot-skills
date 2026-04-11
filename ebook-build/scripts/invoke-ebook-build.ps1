@@ -675,6 +675,18 @@ if ($documentFormats -contains 'pdf') {
     Write-Host "Generated: $coverJpgDestinationPath" -ForegroundColor Green
 }
 
+if ($documentFormats.Count -gt 0) {
+    $producedManuscript = Get-ChildItem -Path $stageOutput -Filter '*.manuscript.md' -File -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -eq $producedManuscript) {
+        throw 'Merged manuscript artifact was not produced by the converter.'
+    }
+
+    $manuscriptDestinationPath = Join-Path $OutputDir ("$ProjectName.manuscript.md")
+    $manuscriptDestinationPath = Copy-ArtifactSafely -SourcePath $producedManuscript.FullName -DestinationPath $manuscriptDestinationPath -ArtifactLabel 'Merged manuscript artifact'
+    $copiedArtifacts.Add($manuscriptDestinationPath)
+    Write-Host "Generated: $manuscriptDestinationPath" -ForegroundColor Green
+}
+
 if ($Formats -contains 'kdp-markdown') {
     $kdpOutputPath = Join-Path $OutputDir ("$ProjectName-kdp-registration.md")
     $epubDestinationPath = if ($documentFormats -contains 'epub') { Join-Path $OutputDir ("$ProjectName.epub") } else { $null }

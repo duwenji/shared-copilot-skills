@@ -1572,12 +1572,16 @@ function Main {
 
     # 動的にプロジェクト名を取得して出力ファイル名を生成
     $projectName = (Split-Path -Leaf $projectRoot).ToLowerInvariant()
+    $manuscriptOutput = Join-Path $outputDir "$projectName.manuscript.md"
     $epubOutput = Join-Path $outputDir "$projectName.epub"
     $pdfOutput = Join-Path $outputDir "$projectName.pdf"
     $coverPdfOutput = Join-Path $outputDir 'cover.pdf'
     $coverJpgOutput = Join-Path $outputDir 'cover.jpg'
 
     try {
+        Copy-Item -Path $manuscriptPath -Destination $manuscriptOutput -Force
+        Write-Host "📝 統合Markdownを出力: $manuscriptOutput" -ForegroundColor Green
+
         if ($Formats -contains 'epub') {
             Convert-ToEpub -ManuscriptPath $manuscriptPath -EffectiveMetadataFile $effectiveMetadataFile -StyleFile $styleFile -EpubOutput $epubOutput
         }
@@ -1610,7 +1614,14 @@ function Main {
 
     Write-Host ""
     Write-Host "Generated files:" -ForegroundColor Cyan
-    $outputs = @(Get-ChildItem $outputDir -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in @('.epub', '.pdf', '.jpg') })
+    $outputs = @(
+        Get-ChildItem $outputDir -File -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.Extension -in @('.epub', '.pdf', '.jpg') -or
+                $_.Name -like '*.manuscript.md' -or
+                $_.Name -like '*-kdp-registration.md'
+            }
+    )
 
     if ($outputs -and $outputs.Count -gt 0) {
         $outputs | ForEach-Object {

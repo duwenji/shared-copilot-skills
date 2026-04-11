@@ -51,6 +51,28 @@ foreach ($repoRootInput in $RepoRoot) {
         continue
     }
 
+    $wrapperPath = Join-Path $configDir 'invoke-build.ps1'
+    if (-not (Test-Path $wrapperPath)) {
+        $errors.Add("[$resolvedRepoRoot] wrapper script not found: $wrapperPath")
+    }
+    else {
+        $wrapperText = Get-Content -Path $wrapperPath -Raw -Encoding UTF8
+        if ($wrapperText -match 'enablePageList') {
+            $errors.Add("[$resolvedRepoRoot] wrapper references deprecated key 'enablePageList'. Remove the legacy pass-through and keep the standard wrapper contract.")
+        }
+
+        $expectedFunctions = @(
+            'Resolve-RepoRoot',
+            'Resolve-ConfiguredPath',
+            'Get-ConfigValue',
+            'Get-SharedSkillRoot'
+        )
+        $missingFunctions = @($expectedFunctions | Where-Object { $wrapperText -notmatch ("function\s+{0}\b" -f [regex]::Escape($_)) })
+        if ($missingFunctions.Count -gt 0) {
+            $warnings.Add("[$resolvedRepoRoot] wrapper does not fully match the canonical helper pattern. Missing function(s): $($missingFunctions -join ', ')")
+        }
+    }
+
     $buildFiles = @(Get-ChildItem -Path $configDir -File -Filter '*.build.json' | Sort-Object Name)
     if ($buildFiles.Count -eq 0) {
         $warnings.Add("[$resolvedRepoRoot] no '*.build.json' files found in $configDir")
@@ -78,6 +100,30 @@ foreach ($repoRootInput in $RepoRoot) {
             'chapterFilePattern',
             'coverFile'
         )
+        $optionalKeys = @(
+            'formats',
+            'kdpMetadataFile',
+            'styleFile',
+            'mermaidMode',
+            'mermaidFormat',
+            'failOnMermaidError',
+            'preserveTemp'
+        )
+        $deprecatedKeys = @(
+            'enablePageList'
+        )
+        $supportedKeys = @($requiredKeys + $optionalKeys + $deprecatedKeys)
+
+        $unknownKeys = @($config.PSObject.Properties.Name | Where-Object { $supportedKeys -notcontains $_ })
+        if ($unknownKeys.Count -gt 0) {
+            $warnings.Add("[$configLabel] unrecognized key(s): $($unknownKeys -join ', ').")
+        }
+
+        foreach ($deprecatedKey in $deprecatedKeys) {
+            if ($null -ne (Get-ConfigPropertyValue -Config $config -Name $deprecatedKey)) {
+                $errors.Add("[$configLabel] deprecated key '$deprecatedKey' is no longer supported. Remove it and use the standard numbered chapter contract.")
+            }
+        }
 
         foreach ($key in $requiredKeys) {
             $value = Get-ConfigPropertyValue -Config $config -Name $key
@@ -131,8 +177,11 @@ foreach ($repoRootInput in $RepoRoot) {
         $chapterFilePattern = [string](Get-ConfigPropertyValue -Config $config -Name 'chapterFilePattern')
         $chapterDirPattern = [string](Get-ConfigPropertyValue -Config $config -Name 'chapterDirPattern')
         $coverFile = [string](Get-ConfigPropertyValue -Config $config -Name 'coverFile')
-        if ($chapterFilePattern -eq '^.*\.md$' -and -not ($chapterDirPattern -eq '^docs$' -and $coverFile -eq 'README.md')) {
-            $warnings.Add("[$configLabel] chapterFilePattern is intentionally broad ('^.*\\.md$'). Keep this only for flat docs repositories.")
+        if ($chapterDirPattern -eq '^docs$' -and $chapterFilePattern -eq '^.*\.md$' -and $coverFile -eq 'README.md') {
+            $errors.Add("[$configLabel] the deprecated flat-docs profile is no longer allowed. Migrate to numbered chapter directories and `00-COVER.md`.")
+        }
+        elseif ($chapterFilePattern -eq '^.*\.md$') {
+            $errors.Add("[$configLabel] chapterFilePattern is too broad ('^.*\\.md$'). Use the standard numbered file contract '^\\d{2}-.*\\.md$'.")
         }
 
         if (-not [string]::IsNullOrWhiteSpace([string]$metadataFileValue)) {

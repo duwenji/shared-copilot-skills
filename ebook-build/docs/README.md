@@ -54,7 +54,7 @@ node --version
 - Keep `styleFile` unset unless you need a custom stylesheet; the wrapper resolves the shared default safely.
 - Prefer `creator` over `author` in metadata YAML.
 - Set `toc-depth: 2` in metadata when you want stable section depth in the generated EPUB TOC.
-- For manual-style repositories that do not use numbered chapter files, use the documented flat-docs compatibility profile (`chapterDirPattern: "^docs$"`, `chapterFilePattern: "^.*\\.md$"`, `coverFile: "README.md"`).
+- Manual-style repositories must still be expressed as numbered chapter directories and numbered section files; the flat `docs/*.md` compatibility profile is deprecated.
 
 ## Metadata default lookup
 
@@ -103,7 +103,7 @@ Use `png` only when a target EPUB reader has SVG rendering issues.
 ## Chapter and section contract
 
 - Chapter directories must match `^\d{2}-`.
-- Section files must match `^\d{2}-.*\.md$` unless the consumer config intentionally widens the pattern.
+- Section files must match `^\d{2}-.*\.md$`; intentionally widening the pattern is treated as non-compliant.
 - Sections are discovered only from files directly under each chapter directory.
 - `00-COVER.md` is treated as an optional cover file outside the chapter sequence.
 - If `sourceRoot` does not contain chapter directories, the runner falls back to `sourceRoot/docs`.

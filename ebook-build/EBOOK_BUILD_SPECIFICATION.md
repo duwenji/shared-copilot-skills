@@ -30,25 +30,34 @@ Rules:
 - `styleFile` is optional and should normally be omitted so the wrapper can resolve the shared default.
 - `formats` may include `epub`, `pdf`, and `kdp-markdown`.
 - `kdpMetadataFile` is optional; when omitted, the generator falls back to the base metadata file and placeholder defaults.
-- Repositories that need a broader `chapterFilePattern` such as `^.*\\.md$` should use the documented flat-docs compatibility profile rather than an ad hoc exception.
+- Consumer repositories must follow the numbered chapter contract. Broad catch-all patterns such as `^.*\\.md$` or a flat `docs/*.md` layout are non-compliant and should be migrated into numbered chapter directories.
 - Optional Mermaid keys are supported for EPUB-safe diagram rendering:
   - `mermaidMode`: `off | auto | required` (default: `auto`)
   - `mermaidFormat`: `svg | png` (default: `svg`)
   - `failOnMermaidError`: `true | false` (default: `false`)
 
-Flat-docs compatibility profile (for manual-style repos such as `spa-quiz-app`):
+## Canonical Consumer Wrapper Contract
 
-```json
-{
-  "sourceRoot": ".",
-  "outputDir": "./ebook-output",
-  "projectName": "repo-name",
-  "metadataFile": "./.github/skills-config/ebook-build/repo-name.metadata.yaml",
-  "chapterDirPattern": "^docs$",
-  "chapterFilePattern": "^.*\\.md$",
-  "coverFile": "README.md"
-}
+The consumer repository must provide a local wrapper at:
+
+```text
+.github/skills-config/ebook-build/invoke-build.ps1
 ```
+
+Wrapper responsibilities:
+
+- resolve the repository root relative to the wrapper location
+- load the consumer `*.build.json` file
+- resolve the shared `ebook-build` skill root from the supported candidate locations
+- pass `SourceRoot`, `OutputDir`, `ProjectName`, `MetadataFile`, `KdpMetadataFile`, `StyleFile`, `Formats`, `ChapterDirPattern`, `ChapterFilePattern`, `CoverFile`, and Mermaid-related options through to the shared `scripts/invoke-ebook-build.ps1`
+- avoid deprecated caller-specific logic such as `enablePageList`
+
+The canonical wrapper shape uses helper functions named:
+
+- `Resolve-RepoRoot`
+- `Resolve-ConfiguredPath`
+- `Get-ConfigValue`
+- `Get-SharedSkillRoot`
 
 ## Canonical Metadata Contract
 
@@ -81,6 +90,7 @@ Given `sourceRoot`:
 - Cover file: `coverFile` (default `00-COVER.md`, optional) and treated as outside the chapter sequence
 - Root `README.md`: optional, copied into staging when present so converter-side TOC updates remain safe
 - Nested section subdirectories are out of scope for this workflow
+- Flat `docs/*.md` layouts are out of contract; manual-style repositories must still organize ebook source into numbered chapter directories and numbered section files
 - Display titles prefer markdown H1 text (`README.md` for chapter-level titles, section file H1 for section-level titles) and fall back to slug conversion only when no suitable H1 is available
 - In a multi-file chapter without `README.md`, if the lead section already begins with a chapter-style H1 such as `第3章 ...`, that heading may be promoted to the chapter title
 - The merged manuscript formats chapters as `第N章 ...` and sections as `N.M ...` unless the source heading already includes an ordinal prefix

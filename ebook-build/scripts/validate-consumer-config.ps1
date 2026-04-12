@@ -107,6 +107,14 @@ foreach ($repoRootInput in $RepoRoot) {
             'mermaidMode',
             'mermaidFormat',
             'failOnMermaidError',
+            'buildPhase',
+            'requireManuscriptApproval',
+            'approvalTokenFile',
+            'generateManuscriptReviewReport',
+            'manuscriptReviewReviewer',
+            'manuscriptReviewDecision',
+            'coverTemplateMode',
+            'coverTemplate',
             'preserveTemp'
         )
         $deprecatedKeys = @(
@@ -132,7 +140,7 @@ foreach ($repoRootInput in $RepoRoot) {
             }
         }
 
-        foreach ($pathKey in @('sourceRoot', 'outputDir', 'metadataFile')) {
+        foreach ($pathKey in @('sourceRoot', 'outputDir', 'metadataFile', 'approvalTokenFile')) {
             $pathValue = Get-ConfigPropertyValue -Config $config -Name $pathKey
             if ($null -ne $pathValue -and [string]$pathValue -match '\\') {
                 $errors.Add("[$configLabel] '$pathKey' uses backslashes. Use forward slashes ('./...') in canonical config.")
@@ -153,6 +161,84 @@ foreach ($repoRootInput in $RepoRoot) {
         $unsupportedFormats = @($formats | Where-Object { $supportedFormats -notcontains $_ })
         if ($unsupportedFormats.Count -gt 0) {
             $errors.Add("[$configLabel] unsupported format(s): $($unsupportedFormats -join ', '). Supported values: $($supportedFormats -join ', ')")
+        }
+
+        $mermaidModeValue = [string](Get-ConfigPropertyValue -Config $config -Name 'mermaidMode')
+        $mermaidFormatValue = [string](Get-ConfigPropertyValue -Config $config -Name 'mermaidFormat')
+        $failOnMermaidErrorValue = Get-ConfigPropertyValue -Config $config -Name 'failOnMermaidError'
+
+        if ($mermaidModeValue.ToLowerInvariant() -ne 'required') {
+            $errors.Add("[$configLabel] mermaidMode must be 'required' in the standard contract.")
+        }
+
+        if ($mermaidFormatValue.ToLowerInvariant() -ne 'svg') {
+            $errors.Add("[$configLabel] mermaidFormat must be 'svg' in the standard contract.")
+        }
+
+        $failOnMermaidErrorNormalized = $false
+        try {
+            $failOnMermaidErrorNormalized = [System.Convert]::ToBoolean($failOnMermaidErrorValue)
+        }
+        catch {
+            $errors.Add("[$configLabel] failOnMermaidError must be a boolean value.")
+        }
+
+        if (-not $failOnMermaidErrorNormalized) {
+            $errors.Add("[$configLabel] failOnMermaidError must be true in the standard contract.")
+        }
+
+        $buildPhaseValue = [string](Get-ConfigPropertyValue -Config $config -Name 'buildPhase')
+        if (-not [string]::IsNullOrWhiteSpace($buildPhaseValue)) {
+            $buildPhaseNormalized = $buildPhaseValue.ToLowerInvariant()
+            if (@('full', 'manuscript-only', 'continue') -notcontains $buildPhaseNormalized) {
+                $errors.Add("[$configLabel] buildPhase must be one of: full, manuscript-only, continue.")
+            }
+        }
+
+        $requireManuscriptApprovalValue = Get-ConfigPropertyValue -Config $config -Name 'requireManuscriptApproval'
+        if ($null -ne $requireManuscriptApprovalValue) {
+            try {
+                [void][System.Convert]::ToBoolean($requireManuscriptApprovalValue)
+            }
+            catch {
+                $errors.Add("[$configLabel] requireManuscriptApproval must be a boolean value.")
+            }
+        }
+
+        $generateManuscriptReviewReportValue = Get-ConfigPropertyValue -Config $config -Name 'generateManuscriptReviewReport'
+        if ($null -ne $generateManuscriptReviewReportValue) {
+            try {
+                [void][System.Convert]::ToBoolean($generateManuscriptReviewReportValue)
+            }
+            catch {
+                $errors.Add("[$configLabel] generateManuscriptReviewReport must be a boolean value.")
+            }
+        }
+
+        $manuscriptReviewDecisionValue = [string](Get-ConfigPropertyValue -Config $config -Name 'manuscriptReviewDecision')
+        if (-not [string]::IsNullOrWhiteSpace($manuscriptReviewDecisionValue)) {
+            $decisionNormalized = $manuscriptReviewDecisionValue.ToLowerInvariant()
+            if (@('approve', 'reject') -notcontains $decisionNormalized) {
+                $errors.Add("[$configLabel] manuscriptReviewDecision must be one of: Approve, Reject.")
+            }
+        }
+
+        $manuscriptReviewReviewerValue = [string](Get-ConfigPropertyValue -Config $config -Name 'manuscriptReviewReviewer')
+        if (-not [string]::IsNullOrWhiteSpace($manuscriptReviewReviewerValue) -and $manuscriptReviewReviewerValue.Length -gt 80) {
+            $warnings.Add("[$configLabel] manuscriptReviewReviewer is long (>80 chars). Keep reviewer name concise.")
+        }
+
+        $coverTemplateModeValue = [string](Get-ConfigPropertyValue -Config $config -Name 'coverTemplateMode')
+        if (-not [string]::IsNullOrWhiteSpace($coverTemplateModeValue)) {
+            $coverTemplateModeNormalized = $coverTemplateModeValue.ToLowerInvariant()
+            if (@('auto', 'file', 'template') -notcontains $coverTemplateModeNormalized) {
+                $errors.Add("[$configLabel] coverTemplateMode must be one of: auto, file, template.")
+            }
+        }
+
+        $coverTemplateValue = [string](Get-ConfigPropertyValue -Config $config -Name 'coverTemplate')
+        if (-not [string]::IsNullOrWhiteSpace($coverTemplateValue) -and $coverTemplateValue -match '[\\/]') {
+            $warnings.Add("[$configLabel] coverTemplate should be a template name (e.g. classic), not a path.")
         }
 
         $metadataFileValue = Get-ConfigPropertyValue -Config $config -Name 'metadataFile'

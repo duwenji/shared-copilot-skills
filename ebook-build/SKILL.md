@@ -1,99 +1,99 @@
 ---
 name: ebook-build
-description: Build EPUB ebooks from numbered markdown projects using PowerShell. Use when generating publishable EPUB files in a consumer repository that references this skill via Git submodule.
+description: Build EPUB ebooks from numbered markdown projects using pwsh (PowerShell 7+). Use when generating publishable EPUB files in a consumer repository that references this skill via Git submodule.
 license: MIT
 ---
 
 # Ebook Build Skill
 
-## Overview
+## 目的
 
-This skill packages a reusable ebook build flow for multi-repository distribution.
+この Skill は、番号付き Markdown 構成の原稿から電子書籍成果物を生成するための共有ビルド基盤です。  
+Copilot Agent から再利用できるように、非対話・契約駆動で実装されています。
 
-It is designed for:
-- Building EPUB and PDF ebooks from numbered markdown chapter structures
-- Emitting shared cover artifacts as `cover.pdf` and `cover.jpg` in `ebook-output/`
-- Sizing `cover.pdf` as a paperback-ready KDP cover spread based on trim size and page count
-- Reusing the same conversion scripts across repositories
-- Consumer-side configuration with repository-specific metadata and output policy
+## 前提ツール
 
-## What This Skill Does
+- PowerShell 7+ (`pwsh`)
+- Pandoc（PATH 上）
+- PDF 生成時は Node.js と Chrome/Edge
+- Mermaid 変換用 CLI（以下のどちらか）
+  - `mmdc`
+  - `npx @mermaid-js/mermaid-cli`
 
-1. Detects source content root (direct or docs/)
-2. Prepares an isolated build workspace
-3. Reuses shared conversion scripts and templates
-4. Builds EPUB/PDF from numbered markdown chapter structures
-5. Generates `cover.pdf` and `cover.jpg` when PDF output is requested
-   - `cover.pdf` uses KDP-style spread dimensions instead of a generic A4 page
-6. Copies the resulting artifacts to the target output directory
+## 正式エントリースクリプト
 
-## Requirements
+- `./scripts/invoke-ebook-build.ps1`
 
-- Windows PowerShell 5.1+
-- Pandoc installed and available in PATH
-- Node.js plus a local Chrome or Edge installation when generating PDF and cover artifacts
+## 入力インタフェース
 
-## Inputs
-
-Primary script: ./scripts/invoke-ebook-build.ps1
-
-| Parameter | Required | Default | Description |
+| パラメータ | 必須 | 既定値 | 説明 |
 |---|---|---|---|
-| sourceRoot | Yes | - | Source project root or docs root containing chapter folders |
-| outputDir | No | sourceRoot/ebook-output | Destination for final ebook artifacts |
-| projectName | No | folder name of sourceRoot | Base filename for outputs |
-| formats | No | [epub] | Optional compatibility input. Supported values are `epub`, `pdf`, and `kdp-markdown` |
-| chapterDirPattern | No | ^\\d{2}- | Chapter directory pattern |
-| chapterFilePattern | No | ^\\d{2}-.*\\.md$ | Chapter file pattern |
-| coverFile | No | 00-COVER.md | Optional cover filename |
-| preserveTemp | No | false | Keep temporary staging directory |
-| metadataFile | No | ./.github/skills-config/ebook-build/<project>.metadata.yaml | Override metadata file |
-| styleFile | No | auto-resolved from the shared skill root | Override stylesheet file only when you intentionally replace the shared default |
-| configFile | No | - | JSON config file path (recommended in consumer repositories) |
+| sourceRoot | Yes | - | 番号付き章ディレクトリを含む原稿ルート |
+| outputDir | No | sourceRoot/ebook-output | 生成物出力先 |
+| projectName | No | sourceRoot のフォルダ名 | 出力ファイル名のベース |
+| formats | No | [epub] | `epub`, `pdf`, `kdp-markdown` |
+| chapterDirPattern | No | ^\\d{2}- | 章ディレクトリ判定 |
+| chapterFilePattern | No | ^\\d{2}-.*\\.md$ | 節ファイル判定 |
+| coverFile | No | 00-COVER.md | 表紙 Markdown ファイル名 |
+| coverTemplateMode | No | auto | `auto`, `file`, `template` |
+| coverTemplate | No | classic | shared 側テンプレート名 |
+| buildPhase | No | full | `full`, `manuscript-only`, `continue` |
+| requireManuscriptApproval | No | false | `continue` 実行時に承認トークン必須化 |
+| approvalTokenFile | No | outputDir/project-name.manuscript.approved | 承認トークンファイル |
+| preserveTemp | No | false | 一時ディレクトリ保持 |
+| metadataFile | No | ./.github/skills-config/ebook-build/<project>.metadata.yaml | メタデータ上書き |
+| styleFile | No | shared 側 default | CSS 上書き |
+| kdpMetadataFile | No | 自動解決 | KDP 補助メタデータ |
+| mermaidMode | Yes | required | `off`, `auto`, `required` |
+| mermaidFormat | Yes | svg | `svg`, `png` |
+| failOnMermaidError | Yes | true | Mermaid 失敗時に停止 |
+| configFile | No | - | consumer 側 JSON 設定 |
 
-## Shared Files
+## Mermaid 標準ポリシー
 
-- ./scripts/invoke-ebook-build.ps1
-- ./scripts/convert-to-kindle.ps1
-- ./assets/style.css
-- ./docs/README.md
+- 標準値は `required` / `svg` / `true`
+- 解決順は `mmdc` → `npx @mermaid-js/mermaid-cli`
+- 変換後は `images/mermaid/` に画像配置し、原稿内の Mermaid ブロックを画像参照へ置換
 
-## Consumer Repository Files
+## 2段階承認フロー（manuscript）
 
-- ./.github/skills-config/ebook-build/<repo>.build.json
-- ./.github/skills-config/ebook-build/<repo>.metadata.yaml
+1. `buildPhase=manuscript-only` で `project-name.manuscript.md` を生成して停止
+2. 原稿レビュー後、承認トークンを配置
+3. `buildPhase=continue` で本生成を継続
 
-Template files are provided in the central repository under:
+```mermaid
+sequenceDiagram
+    actor User as User/Reviewer
+    participant Wrap as invoke-build.ps1
+    participant Runner as invoke-ebook-build.ps1
+    participant Out as ebook-output/
 
-- ./templates/ebook-build/repo.build.template.json
-- ./templates/ebook-build/repo.metadata.template.yaml
-
-## Quick Usage (in consumer repository)
-
-```powershell
-./.github/skills-config/ebook-build/invoke-build.ps1
+    User->>Wrap: buildPhase=manuscript-only
+    Wrap->>Runner: run staged convert
+    Runner->>Out: project-name.manuscript.md
+    Runner-->>User: stop for review
+    User->>Out: place approval token
+    User->>Wrap: buildPhase=continue
+    Wrap->>Runner: verify approval token
+    Runner->>Out: epub/pdf/kdp outputs
 ```
 
-## Output
+## 出力成果物
 
-The skill writes artifacts such as:
+- `project-name.manuscript.md`
 - `project-name.epub`
 - `project-name.pdf`
 - `cover.pdf`
 - `cover.jpg`
 - `project-name-kdp-registration.md`
 
-## Notes
+## consumer 側契約
 
-- This skill is intentionally non-interactive for agent execution.
-- It patches staged conversion scripts to disable terminal prompts.
-- Chapter and section display titles are derived from folder and file slugs, not markdown H1 headings.
-- Canonical consumer JSON paths use forward slashes (`./...`) for cross-environment consistency.
-- Canonical metadata uses `creator` rather than `author` and should usually include `toc-depth: 2`.
-- Metadata default search order is:
-  1. ./.github/skills-config/ebook-build/<project>.metadata.yaml
-  2. ./.github/skills/ebook-build/configs/<project>.metadata.yaml (legacy fallback)
-- Regenerated files under `ebook-output/` are treated as reviewable build artifacts and should be included in commits when the source content, metadata, styles, or build flow changes.
-- For the operational guide, see ./docs/README.md.
-- For detailed flow and constraints, see ./EBOOK_BUILD_SPECIFICATION.md.
-- For validation criteria, see ./VALIDATION_CHECKLIST.md.
+- `./.github/skills-config/ebook-build/<repo>.build.json`
+- `./.github/skills-config/ebook-build/<repo>.metadata.yaml`
+- `./.github/skills-config/ebook-build/invoke-build.ps1`
+
+## 参照仕様
+
+- 詳細仕様: `./EBOOK_BUILD_SPECIFICATION.md`
+- 検証基準: `./VALIDATION_CHECKLIST.md`

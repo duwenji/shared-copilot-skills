@@ -6,6 +6,17 @@
   "chapterDirPattern": "^\\d{2}-",
   "chapterFilePattern": "^\\d{2}-.*\\.md$",
   "coverFile": "00-COVER.md",
+  "coverTemplateMode": "auto",
+  "coverTemplate": "classic",
+  "buildPhase": "full",
+  "requireManuscriptApproval": false,
+  "approvalTokenFile": "./ebook-output/replace-with-project-name.manuscript.approved",
+  "generateManuscriptReviewReport": false,
+  "manuscriptReviewReviewer": "automated-baseline",
+  "manuscriptReviewDecision": "Approve",
+  "mermaidMode": "required",
+  "mermaidFormat": "svg",
+  "failOnMermaidError": true,
   "metadataFile": "./.github/skills-config/ebook-build/replace-with-project-name.metadata.yaml",
   "kdpMetadataFile": "./.github/skills-config/ebook-build/replace-with-project-name.kdp.yaml"
 }

@@ -18,7 +18,7 @@
 
 ```powershell
 # shared repo 側の変更を反映した状態で consumer repo を確認
-powershell -NoProfile -ExecutionPolicy Bypass -File .\.github\skills-config\ebook-build\invoke-build.ps1
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\.github\skills-config\ebook-build\invoke-build.ps1
 ```
 
 If the release adds or changes the `ebook-build` contract, also verify that:

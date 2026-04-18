@@ -42,7 +42,15 @@ function renderPdf(inputPath, outputPath, browserPath, showPageNumbers = false) 
       fileUrl
     ];
 
-    if (!showPageNumbers) {
+    if (showPageNumbers) {
+      // ページ番号のみ右下、他は空
+      const footerHtml = Buffer.from('<div style="width:100%;font-size:10px;text-align:right;margin-right:20px;"><span class="pageNumber"></span></div>').toString('base64');
+      const headerHtml = Buffer.from('<div></div>').toString('base64');
+      commonArgs.splice(commonArgs.length - 1, 0,
+        `--pdf-footer-template=data:text/html;base64,${footerHtml}`,
+        `--pdf-header-template=data:text/html;base64,${headerHtml}`
+      );
+    } else {
       commonArgs.splice(commonArgs.length - 1, 0, '--no-pdf-header-footer');
     }
 

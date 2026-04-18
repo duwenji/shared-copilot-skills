@@ -1,5 +1,8 @@
 param(
     [string]$ConfigFile,
+    [ValidateSet('full', 'manuscript-only', 'continue')] [string]$BuildPhase = 'full',
+    [bool]$RequireManuscriptApproval = $false,
+    [string]$ApprovalTokenFile,
     [string]$SourceRoot,
     [string]$OutputDir,
     [string]$ProjectName,
@@ -11,9 +14,11 @@ param(
     [string]$ChapterDirPattern = '^\d{2}-',
     [string]$ChapterFilePattern = '^\d{2}-.*\.md$',
     [string]$CoverFile = '00-COVER.md',
-    [ValidateSet('off', 'auto', 'required')] [string]$MermaidMode = 'auto',
+    [ValidateSet('auto', 'file', 'template')] [string]$CoverTemplateMode = 'auto',
+    [string]$CoverTemplate = 'classic',
+    [ValidateSet('off', 'auto', 'required')] [string]$MermaidMode = 'required',
     [ValidateSet('svg', 'png')] [string]$MermaidFormat = 'svg',
-    [bool]$FailOnMermaidError = $false,
+    [bool]$FailOnMermaidError = $true,
     [switch]$PreserveTemp
 )
 
@@ -166,6 +171,74 @@ function Ensure-Path {
     if (-not (Test-Path $Path)) {
         throw "$Label not found: $Path"
     }
+}
+
+function Get-YamlScalarValue {
+    param(
+        [Parameter(Mandatory=$true)] [string]$Path,
+        [Parameter(Mandatory=$true)] [string]$Key
+    )
+
+    if (-not (Test-Path $Path)) {
+        return $null
+    }
+
+    $pattern = "(?m)^\s*$([regex]::Escape($Key))\s*:\s*(?<value>.+?)\s*$"
+    $text = Get-Content -Path $Path -Raw -Encoding UTF8
+    $match = [regex]::Match($text, $pattern)
+    if (-not $match.Success) {
+        return $null
+    }
+
+    $value = $match.Groups['value'].Value.Trim()
+    $value = $value.Trim("'", '"')
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        return $null
+    }
+
+    return $value
+}
+
+function Resolve-CoverTemplatePath {
+    param(
+        [Parameter(Mandatory=$true)] [string]$TemplateRoot,
+        [Parameter(Mandatory=$true)] [string]$TemplateName
+    )
+
+    $templateFileName = if ($TemplateName -match '\.md$') { $TemplateName } else { "$TemplateName.md" }
+    $templatePath = Join-Path $TemplateRoot $templateFileName
+    Ensure-Path -Path $templatePath -Label 'cover template file'
+    return $templatePath
+}
+
+function New-CoverFromTemplate {
+    param(
+        [Parameter(Mandatory=$true)] [string]$TemplatePath,
+        [Parameter(Mandatory=$true)] [string]$DestinationPath,
+        [Parameter(Mandatory=$true)] [string]$ProjectName,
+        [Parameter(Mandatory=$true)] [string]$MetadataFile
+    )
+
+    $title = Get-YamlScalarValue -Path $MetadataFile -Key 'title'
+    $creator = Get-YamlScalarValue -Path $MetadataFile -Key 'creator'
+    $subtitle = Get-YamlScalarValue -Path $MetadataFile -Key 'subtitle'
+    $publishDate = Get-YamlScalarValue -Path $MetadataFile -Key 'date'
+
+    if ([string]::IsNullOrWhiteSpace($title)) { $title = $ProjectName }
+    if ([string]::IsNullOrWhiteSpace($creator)) { $creator = 'Unknown Author' }
+    if ([string]::IsNullOrWhiteSpace($subtitle)) { $subtitle = '' }
+    if ([string]::IsNullOrWhiteSpace($publishDate)) { $publishDate = (Get-Date -Format 'yyyy-MM-dd') }
+
+    $templateText = Get-Content -Path $TemplatePath -Raw -Encoding UTF8
+    $resolved = $templateText
+    $resolved = $resolved.Replace('{{title}}', $title)
+    $resolved = $resolved.Replace('{{creator}}', $creator)
+    $resolved = $resolved.Replace('{{subtitle}}', $subtitle)
+    $resolved = $resolved.Replace('{{date}}', $publishDate)
+    $resolved = $resolved.Replace('{{projectName}}', $ProjectName)
+
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($DestinationPath, $resolved, $utf8NoBom)
 }
 
 function Get-TextHash {
@@ -366,9 +439,9 @@ function Convert-MermaidBlocksInMarkdown {
 function Invoke-MermaidPreprocessing {
     param(
         [Parameter(Mandatory=$true)] [string]$StageBookRoot,
-        [ValidateSet('off', 'auto', 'required')] [string]$Mode = 'auto',
+        [ValidateSet('off', 'auto', 'required')] [string]$Mode = 'required',
         [ValidateSet('svg', 'png')] [string]$Format = 'svg',
-        [bool]$FailOnError = $false
+        [bool]$FailOnError = $true
     )
 
     if ($Mode -eq 'off') {
@@ -434,12 +507,17 @@ $KindleTemplateDir = Resolve-Value -Name 'KindleTemplateDir' -CurrentValue $Kind
 $ChapterDirPattern = Resolve-Value -Name 'ChapterDirPattern' -CurrentValue $ChapterDirPattern -DefaultValue '^\d{2}-' -Config $config -Bound $scriptBound
 $ChapterFilePattern = Resolve-Value -Name 'ChapterFilePattern' -CurrentValue $ChapterFilePattern -DefaultValue '^\d{2}-.*\.md$' -Config $config -Bound $scriptBound
 $CoverFile = Resolve-Value -Name 'CoverFile' -CurrentValue $CoverFile -DefaultValue '00-COVER.md' -Config $config -Bound $scriptBound
-$MermaidMode = [string](Resolve-Value -Name 'MermaidMode' -CurrentValue $MermaidMode -DefaultValue 'auto' -Config $config -Bound $scriptBound)
+$CoverTemplateMode = [string](Resolve-Value -Name 'CoverTemplateMode' -CurrentValue $CoverTemplateMode -DefaultValue 'auto' -Config $config -Bound $scriptBound)
+$CoverTemplate = [string](Resolve-Value -Name 'CoverTemplate' -CurrentValue $CoverTemplate -DefaultValue 'classic' -Config $config -Bound $scriptBound)
+$MermaidMode = [string](Resolve-Value -Name 'MermaidMode' -CurrentValue $MermaidMode -DefaultValue 'required' -Config $config -Bound $scriptBound)
 $MermaidFormat = [string](Resolve-Value -Name 'MermaidFormat' -CurrentValue $MermaidFormat -DefaultValue 'svg' -Config $config -Bound $scriptBound)
-$FailOnMermaidError = [System.Convert]::ToBoolean((Resolve-Value -Name 'FailOnMermaidError' -CurrentValue $FailOnMermaidError -DefaultValue $false -Config $config -Bound $scriptBound))
+$FailOnMermaidError = [System.Convert]::ToBoolean((Resolve-Value -Name 'FailOnMermaidError' -CurrentValue $FailOnMermaidError -DefaultValue $true -Config $config -Bound $scriptBound))
+$BuildPhase = [string](Resolve-Value -Name 'BuildPhase' -CurrentValue $BuildPhase -DefaultValue 'full' -Config $config -Bound $scriptBound)
+$RequireManuscriptApproval = [System.Convert]::ToBoolean((Resolve-Value -Name 'RequireManuscriptApproval' -CurrentValue $RequireManuscriptApproval -DefaultValue $false -Config $config -Bound $scriptBound))
+$ApprovalTokenFile = [string](Resolve-Value -Name 'ApprovalTokenFile' -CurrentValue $ApprovalTokenFile -DefaultValue '' -Config $config -Bound $scriptBound)
 
 if ([string]::IsNullOrWhiteSpace($MermaidMode)) {
-    $MermaidMode = 'auto'
+    $MermaidMode = 'required'
 }
 if ([string]::IsNullOrWhiteSpace($MermaidFormat)) {
     $MermaidFormat = 'svg'
@@ -447,11 +525,19 @@ if ([string]::IsNullOrWhiteSpace($MermaidFormat)) {
 
 $MermaidMode = $MermaidMode.ToLowerInvariant()
 $MermaidFormat = $MermaidFormat.ToLowerInvariant()
+$CoverTemplateMode = $CoverTemplateMode.ToLowerInvariant()
+$BuildPhase = $BuildPhase.ToLowerInvariant()
 if (@('off', 'auto', 'required') -notcontains $MermaidMode) {
     throw "Unsupported MermaidMode requested: $MermaidMode"
 }
 if (@('svg', 'png') -notcontains $MermaidFormat) {
     throw "Unsupported MermaidFormat requested: $MermaidFormat"
+}
+if (@('auto', 'file', 'template') -notcontains $CoverTemplateMode) {
+    throw "Unsupported CoverTemplateMode requested: $CoverTemplateMode"
+}
+if (@('full', 'manuscript-only', 'continue') -notcontains $BuildPhase) {
+    throw "Unsupported BuildPhase requested: $BuildPhase"
 }
 
 if (-not $Formats -or $Formats.Count -eq 0) {
@@ -483,7 +569,7 @@ if (-not $ProjectName) {
 
 $defaultMetadataFile = Resolve-DefaultMetadataFile -RepoRoot $repoRoot -ProjectName $ProjectName
 $defaultKdpMetadataFile = Resolve-DefaultKdpMetadataFile -RepoRoot $repoRoot -ProjectName $ProjectName
-$defaultStyleFile = Join-Path $repoRoot '.github\skills\ebook-build\assets\style.css'
+$defaultStyleFile = Join-Path (Split-Path $KindleTemplateDir -Parent) 'assets\style.css'
 $MetadataFile = Resolve-Value -Name 'MetadataFile' -CurrentValue $MetadataFile -DefaultValue $defaultMetadataFile -Config $config -Bound $scriptBound
 $KdpMetadataFile = Resolve-Value -Name 'KdpMetadataFile' -CurrentValue $KdpMetadataFile -DefaultValue $defaultKdpMetadataFile -Config $config -Bound $scriptBound
 $StyleFile = Resolve-Value -Name 'StyleFile' -CurrentValue $StyleFile -DefaultValue $defaultStyleFile -Config $config -Bound $scriptBound
@@ -499,10 +585,20 @@ if (-not $OutputDir) {
     }
 }
 $OutputDir = Resolve-ConfiguredPath -PathValue $OutputDir -RepoRoot $repoRoot
+if ([string]::IsNullOrWhiteSpace($ApprovalTokenFile)) {
+    $ApprovalTokenFile = Join-Path $OutputDir ("$ProjectName.manuscript.approved")
+} else {
+    $ApprovalTokenFile = Resolve-ConfiguredPath -PathValue $ApprovalTokenFile -RepoRoot $repoRoot
+}
+
+if ($BuildPhase -eq 'continue' -and $RequireManuscriptApproval -and -not (Test-Path $ApprovalTokenFile)) {
+    throw "Manuscript approval token not found: $ApprovalTokenFile"
+}
 
 $printStyleFile = Join-Path (Split-Path $KindleTemplateDir -Parent) 'assets\print.css'
 $kdpPackageScript = Join-Path $KindleTemplateDir 'generate-kdp-package.ps1'
 $pdfRenderScript = Join-Path $KindleTemplateDir 'render-html-to-pdf.cjs'
+$coverTemplateRoot = Join-Path (Split-Path $KindleTemplateDir -Parent) 'assets\cover-templates'
 
 Ensure-Path -Path $KindleTemplateDir -Label 'Kindle template directory'
 Ensure-Path -Path (Join-Path $KindleTemplateDir 'convert-to-kindle.ps1') -Label 'convert-to-kindle.ps1'
@@ -549,8 +645,20 @@ if (Test-Path $imagesPath) {
 }
 
 $coverPath = Join-Path $contentRoot $CoverFile
-if (Test-Path $coverPath) {
-    Copy-Item -Path $coverPath -Destination (Join-Path $stageBookRoot $CoverFile) -Force
+$stageCoverPath = Join-Path $stageBookRoot $CoverFile
+if ($CoverTemplateMode -eq 'file') {
+    Ensure-Path -Path $coverPath -Label 'cover markdown file'
+    Copy-Item -Path $coverPath -Destination $stageCoverPath -Force
+} elseif ($CoverTemplateMode -eq 'template') {
+    $templatePath = Resolve-CoverTemplatePath -TemplateRoot $coverTemplateRoot -TemplateName $CoverTemplate
+    New-CoverFromTemplate -TemplatePath $templatePath -DestinationPath $stageCoverPath -ProjectName $ProjectName -MetadataFile $MetadataFile
+} else {
+    if (Test-Path $coverPath) {
+        Copy-Item -Path $coverPath -Destination $stageCoverPath -Force
+    } else {
+        $templatePath = Resolve-CoverTemplatePath -TemplateRoot $coverTemplateRoot -TemplateName $CoverTemplate
+        New-CoverFromTemplate -TemplatePath $templatePath -DestinationPath $stageCoverPath -ProjectName $ProjectName -MetadataFile $MetadataFile
+    }
 }
 
 $readmePath = Join-Path $contentRoot 'README.md'
@@ -602,18 +710,19 @@ function Copy-ArtifactSafely {
     }
 }
 
-# Windows PowerShell on GitHub Actions can misread UTF-8 without BOM after rewriting
+# pwsh on GitHub Actions can misread UTF-8 without BOM after rewriting
 # the staged script. Write a UTF-8 BOM so Unicode strings parse reliably in CI.
 $utf8Bom = New-Object System.Text.UTF8Encoding($true)
 [System.IO.File]::WriteAllText($stageConvertScript, $convertRaw, $utf8Bom)
 
 $documentFormats = @($Formats | Where-Object { $_ -in @('epub', 'pdf') })
-if ($documentFormats.Count -gt 0) {
+$converterFormats = @(if ($BuildPhase -eq 'manuscript-only') { @('epub') } else { $documentFormats })
+if ($converterFormats.Count -gt 0) {
     Write-Host 'Running staged converter...' -ForegroundColor Cyan
     Push-Location $stageKindle
     try {
-        & powershell -NoProfile -ExecutionPolicy Bypass -File $stageConvertScript `
-            -Formats ($documentFormats -join ',') `
+        & pwsh -NoProfile -ExecutionPolicy Bypass -File $stageConvertScript `
+            -Formats ($converterFormats -join ',') `
             -KdpMetadataFile $KdpMetadataFile `
             -ChapterDirPattern $ChapterDirPattern `
             -ChapterFilePattern $ChapterFilePattern `
@@ -628,6 +737,28 @@ if ($documentFormats.Count -gt 0) {
 
 Write-Host 'Collecting artifacts...' -ForegroundColor Cyan
 $copiedArtifacts = New-Object 'System.Collections.Generic.List[string]'
+
+if ($BuildPhase -eq 'manuscript-only') {
+    $producedManuscriptOnly = Get-ChildItem -Path $stageOutput -Filter '*.manuscript.md' -File -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -eq $producedManuscriptOnly) {
+        throw 'Merged manuscript artifact was not produced by the converter.'
+    }
+
+    $manuscriptOnlyDestinationPath = Join-Path $OutputDir ("$ProjectName.manuscript.md")
+    $manuscriptOnlyDestinationPath = Copy-ArtifactSafely -SourcePath $producedManuscriptOnly.FullName -DestinationPath $manuscriptOnlyDestinationPath -ArtifactLabel 'Merged manuscript artifact'
+    $copiedArtifacts.Add($manuscriptOnlyDestinationPath)
+    Write-Host "Generated: $manuscriptOnlyDestinationPath" -ForegroundColor Green
+    Write-Host "Build phase manuscript-only completed. Review and approve manuscript, then run with BuildPhase=continue." -ForegroundColor Yellow
+
+    if ($PreserveTemp) {
+        Write-Host "Temporary workspace preserved: $tempRoot" -ForegroundColor Yellow
+    } else {
+        Remove-Item -Path $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    Write-Host 'ebook-build skill execution completed.' -ForegroundColor Green
+    exit 0
+}
 
 if ($documentFormats -contains 'epub') {
     $producedEpub = Get-ChildItem -Path $stageOutput -Filter '*.epub' -File -ErrorAction SilentlyContinue | Select-Object -First 1

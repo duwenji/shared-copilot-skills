@@ -22,7 +22,7 @@ These files are starting points for each consumer repository.
 7. Validate the config before release:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .github/skills/shared-copilot-skills/ebook-build/scripts/validate-consumer-config.ps1 -RepoRoot .
+pwsh -NoProfile -ExecutionPolicy Bypass -File .github/skills/shared-copilot-skills/ebook-build/scripts/validate-consumer-config.ps1 -RepoRoot .
 ```
 
 ## Run command
@@ -30,7 +30,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .github/skills/shared-copilo
 From consumer repository root:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .github/skills-config/ebook-build/invoke-build.ps1
+pwsh -NoProfile -ExecutionPolicy Bypass -File .github/skills-config/ebook-build/invoke-build.ps1
 ```
 
 The wrapper script (`invoke-build.ps1`) reads the build config, resolves all paths relative to the repo root, and delegates to the shared `invoke-ebook-build.ps1`. This approach avoids path resolution issues that arise when calling the shared script directly from a consumer repo.

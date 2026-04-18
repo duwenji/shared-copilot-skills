@@ -1,14 +1,19 @@
-# Ebook Build Specification
+# Ebook Build 仕様書
 
-## Goal
+## 目的
 
-Provide a reusable, agent-friendly build workflow for markdown repositories that follow numbered chapter conventions and need EPUB, PDF, a preserved merged manuscript at `projectName.manuscript.md`, fixed-name `cover.pdf` / `cover.jpg`, and KDP registration Markdown artifacts.
+番号付き Markdown 原稿を共通契約でビルドし、以下の成果物を安定生成する。
 
-See also: `docs/GENERATION-PIPELINE.md` for the current end-to-end execution flow and Mermaid diagrams.
+- `projectName.manuscript.md`
+- `projectName.epub`
+- `projectName.pdf`
+- `cover.pdf`
+- `cover.jpg`
+- `projectName-kdp-registration.md`
 
-## Canonical Consumer Config Contract
+## consumer 設定契約
 
-Preferred JSON shape:
+推奨 `*.build.json` 形:
 
 ```json
 {
@@ -20,166 +25,209 @@ Preferred JSON shape:
   "kdpMetadataFile": "./.github/skills-config/ebook-build/replace-with-project-name.kdp.yaml",
   "chapterDirPattern": "^\\d{2}-",
   "chapterFilePattern": "^\\d{2}-.*\\.md$",
-  "coverFile": "00-COVER.md"
+  "coverFile": "00-COVER.md",
+  "coverTemplateMode": "auto",
+  "coverTemplate": "classic",
+  "buildPhase": "full",
+  "requireManuscriptApproval": false,
+  "approvalTokenFile": "./ebook-output/replace-with-project-name.manuscript.approved",
+  "generateManuscriptReviewReport": false,
+  "manuscriptReviewReviewer": "automated-baseline",
+  "manuscriptReviewDecision": "Approve",
+  "mermaidMode": "required",
+  "mermaidFormat": "svg",
+  "failOnMermaidError": true
 }
 ```
 
-Rules:
+契約ルール:
 
-- Use forward-slash path notation in consumer JSON config.
-- `styleFile` is optional and should normally be omitted so the wrapper can resolve the shared default.
-- `formats` may include `epub`, `pdf`, and `kdp-markdown`.
-- `kdpMetadataFile` is optional; when omitted, the generator falls back to the base metadata file and placeholder defaults.
-- Consumer repositories must follow the numbered chapter contract. Broad catch-all patterns such as `^.*\\.md$` or a flat `docs/*.md` layout are non-compliant and should be migrated into numbered chapter directories.
-- Optional Mermaid keys are supported for EPUB-safe diagram rendering:
-  - `mermaidMode`: `off | auto | required` (default: `auto`)
-  - `mermaidFormat`: `svg | png` (default: `svg`)
-  - `failOnMermaidError`: `true | false` (default: `false`)
+- JSON パスは forward slash（`./...`）
+- `styleFile` は通常未指定（shared default を使用）
+- Mermaid 標準は `required` / `svg` / `true`
+- `coverTemplateMode` は `auto|file|template`
+- `buildPhase` は `full|manuscript-only|continue`
+- `generateManuscriptReviewReport` は wrapper 後処理でレビュー記録を自動生成
+- `manuscriptReviewDecision` は `Approve|Reject`
 
-## Canonical Consumer Wrapper Contract
+## wrapper 契約
 
-The consumer repository must provide a local wrapper at:
+consumer 側 wrapper:
 
 ```text
 .github/skills-config/ebook-build/invoke-build.ps1
 ```
 
-Wrapper responsibilities:
+責務:
 
-- resolve the repository root relative to the wrapper location
-- load the consumer `*.build.json` file
-- resolve the shared `ebook-build` skill root from the supported candidate locations
-- pass `SourceRoot`, `OutputDir`, `ProjectName`, `MetadataFile`, `KdpMetadataFile`, `StyleFile`, `Formats`, `ChapterDirPattern`, `ChapterFilePattern`, `CoverFile`, and Mermaid-related options through to the shared `scripts/invoke-ebook-build.ps1`
-- avoid deprecated caller-specific logic such as `enablePageList`
+1. repo root 解決
+2. `*.build.json` 読み込み
+3. shared skill root 解決
+4. 契約キーを `scripts/invoke-ebook-build.ps1` に透過転送
 
-The canonical wrapper shape uses helper functions named:
+## 章・節契約
 
-- `Resolve-RepoRoot`
-- `Resolve-ConfiguredPath`
-- `Get-ConfigValue`
-- `Get-SharedSkillRoot`
+- 章ディレクトリ: `^\d{2}-`
+- 節ファイル: `^\d{2}-.*\.md$`（章直下）
+- `coverFile` は章列の外
+- `README.md` は存在時に stage へコピー
+- フラット `docs/*.md` は契約外
 
-## Canonical Metadata Contract
+## ビルド全体フロー
 
-Preferred YAML keys:
+```mermaid
+sequenceDiagram
+  actor User
+  participant Wrap as invoke-build.ps1
+  participant Runner as invoke-ebook-build.ps1
+  participant Stage as temp/book
+  participant Conv as convert-to-kindle.ps1
+  participant Out as ebook-output/
 
-- `title`
-- `creator`
-- `language`
-- `rights`
-- `date`
-- `publisher`
-- `identifier`
-- `subject`
-- `toc-depth` (recommended value: `2`)
+  User->>Wrap: 実行
+  Wrap->>Runner: 契約パラメータ転送
+  Runner->>Runner: 設定解決・入力検証
+  Runner->>Stage: 原稿/画像/表紙を stage
+  Runner->>Runner: Mermaid 前処理
+  Runner->>Conv: staged converter 実行
+  Conv-->>Runner: manuscript/epub/pdf
+  Runner->>Out: artifact 収集
+```
 
-`author` is treated as a legacy form and should be migrated to `creator` in consumer repositories.
+## Mermaid 前処理フロー
 
-## Source Discovery
+```mermaid
+sequenceDiagram
+  participant Runner as invoke-ebook-build.ps1
+  participant Scan as Markdown scanner
+  participant CLI as mmdc or npx mermaid-cli
+  participant Img as images/mermaid
 
-Given `sourceRoot`:
+  Runner->>Scan: fenced mermaid ブロック検出
+  alt ブロックなし
+    Scan-->>Runner: skip
+  else ブロックあり
+    Runner->>CLI: レンダラー解決（mmdc優先）
+    alt required かつ解決失敗
+      CLI-->>Runner: error
+      Runner-->>Runner: fail build
+    else 解決成功
+      Runner->>CLI: .mmd を svg/png 変換
+      CLI->>Img: 画像出力
+      Runner->>Runner: Markdown を画像参照へ置換
+    end
+  end
+```
 
-1. If `sourceRoot` contains chapter directories matching `chapterDirPattern`, use `sourceRoot`.
-2. Otherwise, if `sourceRoot/docs` contains matching chapter directories, use `sourceRoot/docs`.
-3. Otherwise, fail with a clear diagnostic.
+## manuscript 承認ゲートフロー
 
-## Chapter Contract
+```mermaid
+sequenceDiagram
+  actor Reviewer
+  participant Runner as invoke-ebook-build.ps1
+  participant Out as ebook-output/
+  participant Token as approval token
 
-- Chapter directories: `chapterDirPattern` (default `^\\d{2}-`)
-- Section markdown files: `chapterFilePattern` (default `^\\d{2}-.*\\.md$`) located directly under each chapter directory
-- Cover file: `coverFile` (default `00-COVER.md`, optional) and treated as outside the chapter sequence
-- Root `README.md`: optional, copied into staging when present so converter-side TOC updates remain safe
-- Nested section subdirectories are out of scope for this workflow
-- Flat `docs/*.md` layouts are out of contract; manual-style repositories must still organize ebook source into numbered chapter directories and numbered section files
-- Display titles prefer markdown H1 text (`README.md` for chapter-level titles, section file H1 for section-level titles) and fall back to slug conversion only when no suitable H1 is available
-- In a multi-file chapter without `README.md`, if the lead section already begins with a chapter-style H1 such as `第3章 ...`, that heading may be promoted to the chapter title
-- The merged manuscript formats chapters as `第N章 ...` and sections as `N.M ...` unless the source heading already includes an ordinal prefix
-- Ordinal values come directly from the numeric directory/file prefixes; if a repo intentionally uses `00-*`, the output can legitimately contain `第0章`, `0.1`, `2.0`, and similar zero-based labels
+  Reviewer->>Runner: buildPhase=manuscript-only
+  Runner->>Out: projectName.manuscript.md
+  Runner-->>Reviewer: 停止（レビュー待ち）
+  Reviewer->>Token: projectName.manuscript.approved 作成
+  Reviewer->>Runner: buildPhase=continue
+  Runner->>Token: トークン存在確認
+  alt token なし
+    Runner-->>Reviewer: fail
+  else token あり
+    Runner->>Out: epub/pdf/kdp 生成
+  end
+```
 
-## Staging Contract
+## 表紙テンプレート契約
 
-The runner creates an isolated temporary workspace:
+shared 側テンプレート配置:
 
-- `temp/book/` staged source root
-- `temp/book/kindle/` staged conversion scripts, metadata, and stylesheet
-- `temp/book/kindle/output/` intermediate outputs
+```text
+assets/cover-templates/
+```
 
-## Build Steps
+既定テンプレート:
 
-1. Resolve configuration values from command-line parameters, config file, and defaults.
-2. Validate required file paths and discover the effective content root.
-3. Stage chapter content, optional cover, and optional root `README.md`.
-4. Stage converter scripts, metadata, and stylesheet.
-5. Patch the staged converter for non-interactive execution.
-6. Run the staged converter.
-7. Copy the generated artifacts to `outputDir` using `projectName` as the filename base, including the preserved merged manuscript `projectName.manuscript.md`; when `pdf` is requested, also emit fixed-name `cover.pdf` and `cover.jpg` in the same folder. `cover.pdf` is sized as a paperback cover spread using the trim size plus a spine width derived from the generated page count.
-8. Optionally generate `projectName-kdp-registration.md` from the base metadata and optional KDP metadata.
-9. Fail if any requested artifact was not produced.
-10. Clean temporary workspace unless `preserveTemp` is enabled.
+- `classic.md`
+- `minimal.md`
+- `technical.md`
 
-## Merged Manuscript Assembly Contract
+切替ルール:
 
-Before final format conversion, the staged converter assembles all chapter and section markdown into one normalized manuscript.
+- `coverTemplateMode=file`: `coverFile` 必須
+- `coverTemplateMode=template`: テンプレートから `coverFile` を生成
+- `coverTemplateMode=auto`: `coverFile` があれば優先、なければテンプレート生成
 
-Assembly behavior:
-- Build a sorted chapter/section list from `chapterDirPattern` and `chapterFilePattern`.
-- Generate a link map from original file paths to internal anchor IDs.
-- Add the optional cover block first and assign the cover anchor.
-- Insert chapter headings as `# 第N章 ... {#chapter-...}` unless already numbered.
-- Insert section headings as `## N.M ... {#section-...}` unless the current rendering rule suppresses a redundant first section heading.
-- The suppression rule can apply to the lead section of a multi-file chapter when its normalized title is effectively the same as the resolved chapter title.
-- **[v2 BREAKING]** When suppressed, the first file's body headings are rendered at the chapter body level with no section ordinal prefix (e.g., `## 3.1 本文` instead of `### 3.1.1 本文`). The virtual `N.1` nesting behavior is removed. Later section files retain standard `N.2`, `N.3` numbering.
-- Remove the first H1 from each source section body so the merged manuscript does not create multiple competing top-level headings.
-- Shift lower body headings (`##` and below in source files) so they fit the merged chapter/section hierarchy.
-- Normalize supported manual page-break markers to `<div class="page-break"></div>`.
-- Rewrite relative markdown links to anchor links using the generated link map.
-- Write the result to the preserved `projectName.manuscript.md` artifact.
+利用可能プレースホルダ:
 
-There are two closely related assembly paths:
-- `New-BookManuscript` for the base manuscript and EPUB flow
-- `New-PdfReaderManuscript` for the PDF flow, which additionally inserts a frontmatter TOC block before the chapter body
+- `{{title}}`
+- `{{subtitle}}`
+- `{{creator}}`
+- `{{date}}`
+- `{{projectName}}`
 
-## Optional Mermaid Preprocessing
+## 成果物動作
 
-When `mermaidMode` is `auto` or `required`, the runner scans staged markdown for fenced `mermaid` blocks and renders them to `images/mermaid/` before `pandoc` runs.
+- `manuscript-only`: `projectName.manuscript.md` のみ収集して終了
+- `continue`: 承認トークン確認後に本生成
+- `full`: 従来どおり一括生成
 
-Resolution order:
+## manuscript レビュー判定基準（厳密）
 
-1. `mmdc`
-2. `npx @mermaid-js/mermaid-cli`
+Severity:
 
-If rendering is unavailable:
+- Critical: 出版可否に直結する欠陥（manuscript 未生成、承認ゲート破綻、重大文字化け、成果物欠落）
+- Major: 品質低下が明確な欠陥（見出し階層崩れ、章順不整合、主要メタデータ不備）
+- Minor: 軽微な改善事項（文言揺れ、注記不足）
 
-- `auto`: warn and leave the source block unchanged
-- `required`: fail the build with a clear diagnostic
+承認ルール:
 
-Use `svg` by default for quality and file size. Switch to `png` only for EPUB readers with poor SVG support.
+- 承認: Critical 0 件 かつ Major 3 件以下
+- 不承認: Critical 1 件以上 または Major 4 件以上
 
-## Format Behavior
+レビュー実行順:
 
-- `projectName.manuscript.md`: the merged Markdown manuscript is preserved in `outputDir` whenever the document converter runs, so reviewers can inspect the exact assembled source used for ebook generation.
-- `epub`: generated by Pandoc when requested.
-- `pdf`: generated via an HTML print pass and a local Chrome/Edge renderer for a fixed-layout style output. When requested, the workflow also emits `cover.pdf` and `cover.jpg` to `outputDir` using fixed filenames. The standalone `cover.pdf` is rendered as a KDP-style full cover sheet (front panel on the right, blank back/spine areas) using trim size metadata and the final PDF page count.
-- `kdp-markdown`: generated as `projectName-kdp-registration.md` using the base metadata and optional KDP-specific overrides.
-- Mermaid diagrams are embedded as static images when preprocessing is enabled and a supported renderer is available.
+1. `buildPhase=manuscript-only` で manuscript を生成
+2. 自動チェック（設定・構造・Mermaid・リンク・成果物）を実行
+3. 手動レビュー（文章品質・図表可読性・コード体裁・権利表記）を実施
+4. Issue を Critical/Major/Minor で集計
+5. 承認時のみ `approvalTokenFile` を作成
+6. `buildPhase=continue` で本生成を実行
 
-## Error Strategy
+Issue 記録最小項目:
 
-Hard fail:
+- `ID`
+- `Severity`
+- `File/Section`
+- `Observation`
+- `Repro/Check Method`
+- `Fix Recommendation`
+- `Status`（Open/Resolved/Accepted Risk）
 
-- source root not found
-- metadata or stylesheet not found
-- core conversion script missing
-- no chapter content found
-- staged converter exits with non-zero status
-- EPUB artifact not produced by the converter
+推奨テンプレート:
 
-## Reuse Scope
+- `assets/review-templates/manuscript-review-report.template.md`
 
-Reusable across repositories that satisfy the chapter contract and provide project-specific config + metadata.
+推奨生成コマンド（pwsh）:
 
-Project-specific responsibilities:
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/new-manuscript-review-report.ps1 -RepoRoot .
+```
 
-- maintain each project's `.github/skills-config/ebook-build/*.build.json`
-- maintain each project's `.github/skills-config/ebook-build/*.metadata.yaml`
-- keep `projectName`, `sourceRoot`, and output policy aligned with repository layout
+## エラー戦略（Hard fail）
+
+- source root 未検出
+- metadata/style/script 未検出
+- chapter content 未検出
+- Mermaid required で CLI 解決不可
+- converter 非ゼロ終了
+- 必須 artifact 未生成
+- `continue` で承認トークン未検出
+
+## 再利用範囲
+
+この仕様は、章/節契約を満たす任意の consumer repo で再利用可能。  
+consumer は `*.build.json` と `*.metadata.yaml` を責務として管理する。

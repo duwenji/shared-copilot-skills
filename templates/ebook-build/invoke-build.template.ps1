@@ -53,8 +53,7 @@ function Get-SharedSkillRoot {
     $candidates = @(
         (Join-Path $RepoRoot '../shared-copilot-skills/ebook-build'),
         (Join-Path $RepoRoot '.github/skills/shared-skills/ebook-build'),
-        (Join-Path $RepoRoot '.github/skills/shared-copilot-skills/ebook-build'),
-        (Join-Path $RepoRoot '.github/skills/ebook-build')
+        (Join-Path $RepoRoot '.github/skills/shared-copilot-skills/ebook-build')
     )
 
     foreach ($candidate in $candidates) {
@@ -81,6 +80,17 @@ $formatsValue          = Get-ConfigValue -Config $config -Name 'formats'
 $chapterDirPatternValue  = Get-ConfigValue -Config $config -Name 'chapterDirPattern'
 $chapterFilePatternValue = Get-ConfigValue -Config $config -Name 'chapterFilePattern'
 $coverFileValue        = Get-ConfigValue -Config $config -Name 'coverFile'
+$coverTemplateModeValue = Get-ConfigValue -Config $config -Name 'coverTemplateMode'
+$coverTemplateValue = Get-ConfigValue -Config $config -Name 'coverTemplate'
+$buildPhaseValue = Get-ConfigValue -Config $config -Name 'buildPhase'
+$requireManuscriptApprovalValue = Get-ConfigValue -Config $config -Name 'requireManuscriptApproval'
+$approvalTokenFileValue = Get-ConfigValue -Config $config -Name 'approvalTokenFile'
+$mermaidModeValue = Get-ConfigValue -Config $config -Name 'mermaidMode'
+$mermaidFormatValue = Get-ConfigValue -Config $config -Name 'mermaidFormat'
+$failOnMermaidErrorValue = Get-ConfigValue -Config $config -Name 'failOnMermaidError'
+$generateManuscriptReviewReportValue = Get-ConfigValue -Config $config -Name 'generateManuscriptReviewReport'
+$manuscriptReviewReviewerValue = Get-ConfigValue -Config $config -Name 'manuscriptReviewReviewer'
+$manuscriptReviewDecisionValue = Get-ConfigValue -Config $config -Name 'manuscriptReviewDecision'
 
 $projectName = if ($projectNameValue) { [string]$projectNameValue } else { Split-Path -Leaf $repoRoot }
 $sourceRoot  = Resolve-ConfiguredPath -BasePath $repoRoot -Value $sourceRootValue
@@ -109,6 +119,17 @@ $formats          = if ($null -ne $formatsValue) { @($formatsValue) } else { @('
 $chapterDirPattern  = if ($chapterDirPatternValue)  { [string]$chapterDirPatternValue }  else { '^\d{2}-' }
 $chapterFilePattern = if ($chapterFilePatternValue) { [string]$chapterFilePatternValue } else { '^\d{2}-.*\.md$' }
 $coverFile        = if ($coverFileValue) { [string]$coverFileValue } else { '00-COVER.md' }
+$coverTemplateMode = if ($coverTemplateModeValue) { [string]$coverTemplateModeValue } else { 'auto' }
+$coverTemplate = if ($coverTemplateValue) { [string]$coverTemplateValue } else { 'classic' }
+$buildPhase = if ($buildPhaseValue) { [string]$buildPhaseValue } else { 'full' }
+$requireManuscriptApproval = if ($null -ne $requireManuscriptApprovalValue) { [bool]$requireManuscriptApprovalValue } else { $false }
+$approvalTokenFile = Resolve-ConfiguredPath -BasePath $repoRoot -Value $approvalTokenFileValue
+$mermaidMode = if ($mermaidModeValue) { [string]$mermaidModeValue } else { 'required' }
+$mermaidFormat = if ($mermaidFormatValue) { [string]$mermaidFormatValue } else { 'svg' }
+$failOnMermaidError = if ($null -ne $failOnMermaidErrorValue) { [bool]$failOnMermaidErrorValue } else { $true }
+$generateManuscriptReviewReport = if ($null -ne $generateManuscriptReviewReportValue) { [bool]$generateManuscriptReviewReportValue } else { $false }
+$manuscriptReviewReviewer = if ($manuscriptReviewReviewerValue) { [string]$manuscriptReviewReviewerValue } else { 'automated-baseline' }
+$manuscriptReviewDecision = if ($manuscriptReviewDecisionValue) { [string]$manuscriptReviewDecisionValue } else { 'Approve' }
 
 $params = @{
     SourceRoot         = $sourceRoot
@@ -122,6 +143,14 @@ $params = @{
     ChapterDirPattern  = $chapterDirPattern
     ChapterFilePattern = $chapterFilePattern
     CoverFile          = $coverFile
+    CoverTemplateMode  = $coverTemplateMode
+    CoverTemplate      = $coverTemplate
+    BuildPhase         = $buildPhase
+    RequireManuscriptApproval = $requireManuscriptApproval
+    ApprovalTokenFile  = $approvalTokenFile
+    MermaidMode        = $mermaidMode
+    MermaidFormat      = $mermaidFormat
+    FailOnMermaidError = $failOnMermaidError
 }
 
 & $invokeScript @params
@@ -129,3 +158,22 @@ $params = @{
 if ($LASTEXITCODE -ne 0) {
     throw "ebook build failed with exit code $LASTEXITCODE"
 }
+
+if ($generateManuscriptReviewReport) {
+    $reviewScript = Join-Path $sharedSkillRoot 'scripts/new-manuscript-review-report.ps1'
+    if (-not (Test-Path $reviewScript)) {
+        throw "manuscript review report script not found: $reviewScript"
+    }
+
+    & pwsh -NoProfile -ExecutionPolicy Bypass -File $reviewScript `
+        -RepoRoot $repoRoot `
+        -ProjectName $projectName `
+        -OutputDir $outputDir `
+        -Reviewer $manuscriptReviewReviewer `
+        -Decision $manuscriptReviewDecision
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "manuscript review report generation failed with exit code $LASTEXITCODE"
+    }
+}
+

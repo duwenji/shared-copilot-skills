@@ -27,13 +27,15 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .github/skills/shared-copilot-skil
 
 ## Run command
 
-From consumer repository root:
+From consumer repository root (choose a step):
 
 ```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File .github/skills-config/ebook-build/invoke-build.ps1
+pwsh -NoProfile -ExecutionPolicy Bypass -File .github/skills-config/ebook-build/invoke-build.ps1 -BuildStep step1
+pwsh -NoProfile -ExecutionPolicy Bypass -File .github/skills-config/ebook-build/invoke-build.ps1 -BuildStep step2
+pwsh -NoProfile -ExecutionPolicy Bypass -File .github/skills-config/ebook-build/invoke-build.ps1 -BuildStep step3
 ```
 
-The wrapper script (`invoke-build.ps1`) reads the build config, resolves all paths relative to the repo root, and delegates to the shared `invoke-ebook-build.ps1`. This approach avoids path resolution issues that arise when calling the shared script directly from a consumer repo.
+The wrapper script (`invoke-build.ps1`) reads the build config, resolves all paths relative to the repo root, and dispatches directly to step scripts in the shared skill. This approach keeps each step's input/output contract explicit.
 
 Generated outputs are written to `ebook-output/` and can include:
 - `*.epub`

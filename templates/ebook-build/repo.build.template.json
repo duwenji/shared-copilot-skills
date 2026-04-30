@@ -8,7 +8,6 @@
   "coverFile": "00-COVER.md",
   "coverTemplateMode": "auto",
   "coverTemplate": "classic",
-  "buildPhase": "full",
   "requireManuscriptApproval": false,
   "approvalTokenFile": "./ebook-output/replace-with-project-name.manuscript.approved",
   "generateManuscriptReviewReport": false,

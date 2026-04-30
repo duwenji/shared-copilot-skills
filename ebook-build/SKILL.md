@@ -22,7 +22,9 @@ Copilot Agent から再利用できるように、非対話・契約駆動で実
 
 ## 正式エントリースクリプト
 
-- `./scripts/invoke-ebook-build.ps1`
+- `./scripts/invoke-ebook-step1-manuscript.ps1`
+- `./scripts/invoke-ebook-step2-cover.ps1`
+- `./scripts/invoke-ebook-step3-finalize.ps1`
 
 ## 入力インタフェース
 
@@ -37,8 +39,7 @@ Copilot Agent から再利用できるように、非対話・契約駆動で実
 | coverFile | No | 00-COVER.md | 表紙 Markdown ファイル名 |
 | coverTemplateMode | No | auto | `auto`, `file`, `template` |
 | coverTemplate | No | classic | shared 側テンプレート名 |
-| buildPhase | No | full | `full`, `manuscript-only`, `continue` |
-| requireManuscriptApproval | No | false | `continue` 実行時に承認トークン必須化 |
+| requireManuscriptApproval | No | false | `BuildStep=step3` 実行時に承認トークン必須化 |
 | approvalTokenFile | No | outputDir/project-name.manuscript.approved | 承認トークンファイル |
 | preserveTemp | No | false | 一時ディレクトリ保持 |
 | metadataFile | No | ./.github/skills-config/ebook-build/<project>.metadata.yaml | メタデータ上書き |
@@ -57,23 +58,23 @@ Copilot Agent から再利用できるように、非対話・契約駆動で実
 
 ## 2段階承認フロー（manuscript）
 
-1. `buildPhase=manuscript-only` で `project-name.manuscript.md` を生成して停止
+1. `BuildStep=step1` で `project-name.manuscript.md` を生成して停止
 2. 原稿レビュー後、承認トークンを配置
-3. `buildPhase=continue` で本生成を継続
+3. `BuildStep=step3` で本生成を継続
 
 ```mermaid
 sequenceDiagram
     actor User as User/Reviewer
     participant Wrap as invoke-build.ps1
-    participant Runner as invoke-ebook-build.ps1
+    participant Runner as step scripts
     participant Out as ebook-output/
 
-    User->>Wrap: buildPhase=manuscript-only
+    User->>Wrap: BuildStep=step1
     Wrap->>Runner: run staged convert
     Runner->>Out: project-name.manuscript.md
     Runner-->>User: stop for review
     User->>Out: place approval token
-    User->>Wrap: buildPhase=continue
+    User->>Wrap: BuildStep=step3
     Wrap->>Runner: verify approval token
     Runner->>Out: epub/pdf/kdp outputs
 ```

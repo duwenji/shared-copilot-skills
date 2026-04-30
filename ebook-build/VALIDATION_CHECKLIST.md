@@ -12,7 +12,7 @@
 
 - Critical 例:
 	- `projectName.manuscript.md` が未生成
-	- `buildPhase=continue` で承認トークン未配置なのに処理継続
+	- `BuildStep=step3` で承認トークン未配置なのに処理継続
 	- 内部リンクが大量に壊れ、読了に支障
 	- 生成成果物（epub/pdf/kdp）の必須ファイル欠落
 - Major 例:
@@ -29,7 +29,7 @@
 
 - [ ] `*.build.json` が JSON 構文として有効
 - [ ] 必須キーが存在（`sourceRoot`, `outputDir`, `projectName`, `metadataFile`, `chapterDirPattern`, `chapterFilePattern`）
-- [ ] `buildPhase` が `full|manuscript-only|continue`
+- [ ] 実行は `BuildStep` 指定（`step1|step2|step3`）で行う
 - [ ] `requireManuscriptApproval` が bool
 - [ ] `approvalTokenFile` が path 形式
 - [ ] Mermaid 標準値（`mermaidMode=required`, `mermaidFormat=svg`, `failOnMermaidError=true`）
@@ -69,9 +69,9 @@
 
 ## G. Output Completeness（自動）
 
-- [ ] `buildPhase=manuscript-only` で manuscript のみ収集して停止する
-- [ ] 承認トークンなし `buildPhase=continue` は失敗する
-- [ ] 承認トークンあり `buildPhase=continue` は epub/pdf/kdp 生成に進む
+- [ ] `BuildStep=step1` で manuscript のみ生成される
+- [ ] 承認トークンなし `BuildStep=step3` は失敗する
+- [ ] 承認トークンあり `BuildStep=step3` は epub/pdf/kdp 生成に進む
 - [ ] `coverTemplateMode=file` で `coverFile` が優先される
 - [ ] `coverTemplateMode=template` でテンプレートから表紙が生成される
 - [ ] `coverTemplateMode=auto` で file 優先、template fallback が機能する
@@ -130,13 +130,13 @@
 
 ## レビューフロー
 
-1. `buildPhase=manuscript-only` を実行
+1. `BuildStep=step1` を実行
 2. 自動チェック（A〜G）を実行
 3. 手動チェック（H）を実施
 4. Issue を Critical/Major/Minor で集計
 5. 判定（承認/不承認）
 6. 承認時のみ `approvalTokenFile` を作成
-7. `buildPhase=continue` を実行
+7. `BuildStep=step3` を実行
 
 ### 推奨実行コマンド（pwsh）
 

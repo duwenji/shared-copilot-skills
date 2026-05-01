@@ -285,23 +285,25 @@ function Invoke-HeadlessBrowser {
     }
 
     & $Browser @Arguments
-    if ($LASTEXITCODE -eq 0) {
-        for ($i = 0; $i -lt 20; $i++) {
-            if (Test-Path $ExpectedOutput) { return }
-            Start-Sleep -Milliseconds 200
-        }
+    for ($i = 0; $i -lt 30; $i++) {
+        if (Test-Path $ExpectedOutput) { return }
+        Start-Sleep -Milliseconds 200
     }
 
-    $fallbackArgs = @('--headless') + @($Arguments | Where-Object { $_ -ne '--headless=new' -and $_ -ne '--headless' })
+    # Fallback: some browsers (Edge) return non-zero exit code even on success;
+    # retry with legacy --headless flag with minimal flags before giving up.
+    $printToPdfArg = $Arguments | Where-Object { $_ -like '--print-to-pdf=*' } | Select-Object -First 1
+    $urlArg = $Arguments | Select-Object -Last 1
+    $fallbackArgs = @('--headless', '--disable-gpu', '--no-sandbox')
+    if ($printToPdfArg) { $fallbackArgs += $printToPdfArg }
+    $fallbackArgs += $urlArg
     & $Browser @fallbackArgs
-    if ($LASTEXITCODE -eq 0) {
-        for ($i = 0; $i -lt 20; $i++) {
-            if (Test-Path $ExpectedOutput) { return }
-            Start-Sleep -Milliseconds 200
-        }
+    for ($i = 0; $i -lt 30; $i++) {
+        if (Test-Path $ExpectedOutput) { return }
+        Start-Sleep -Milliseconds 200
     }
 
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $ExpectedOutput)) {
+    if (-not (Test-Path $ExpectedOutput)) {
         throw "Headless render failed: $ExpectedOutput"
     }
 }
@@ -653,8 +655,9 @@ try {
     if ($Formats -contains 'pdf') {
         Write-Host 'Step 3 - Building PDF...' -ForegroundColor Cyan
         $browser = Get-BrowserExecutable
-        $printHtml = Join-Path $stageOutput "$ProjectName.print.html"
-        $pdfStaged = Join-Path $stageOutput "$ProjectName.pdf"
+        $resolvedOutputDir = (Resolve-Path $OutputDir).ProviderPath
+        $printHtml = Join-Path $resolvedOutputDir "$ProjectName.print.html"
+        $pdfDest   = Join-Path $resolvedOutputDir "$ProjectName.pdf"
 
         Push-Location $stageBookRoot
         try {
@@ -678,20 +681,20 @@ try {
         }
 
         $htmlUrl = 'file:///' + ($printHtml -replace '\\', '/')
-        Invoke-HeadlessBrowser -Browser $browser -ExpectedOutput $pdfStaged -Arguments @(
+        Invoke-HeadlessBrowser -Browser $browser -ExpectedOutput $pdfDest -Arguments @(
             '--headless=new',
             '--disable-gpu',
+            '--no-sandbox',
+            '--disable-extensions',
+            '--disable-background-networking',
             '--allow-file-access-from-files',
-            '--run-all-compositor-stages-before-draw',
-            '--virtual-time-budget=3000',
             '--no-first-run',
             '--no-default-browser-check',
-            '--print-to-pdf-no-header',
-            "--print-to-pdf=$pdfStaged",
+            "--print-to-pdf=$pdfDest",
             $htmlUrl
         )
 
-        $pdfDest = Copy-ArtifactSafely -SourcePath $pdfStaged -DestinationPath (Join-Path $OutputDir "$ProjectName.pdf") -ArtifactLabel 'PDF'
+        Remove-Item -Path $printHtml -Force -ErrorAction SilentlyContinue
         $copiedArtifacts.Add($pdfDest)
         Write-Host "OUTPUT: $pdfDest" -ForegroundColor Green
     }

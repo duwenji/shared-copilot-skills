@@ -258,6 +258,13 @@ nav#TOC h3 {
   page-break-after: avoid;
 }
 
+nav#TOC ol,
+nav#toc ol,
+.toc ol {
+  list-style: none;
+  padding-left: 1em;
+}
+
 .toc ul {
   list-style-type: none;
   padding-left: 0;

@@ -19,6 +19,7 @@ param(
     [string]$MermaidFormat         = 'svg',
     [bool]$FailOnMermaidError      = $true,
     [string]$MermaidConfigFile     = '',
+    [string]$MermaidPuppeteerConfigFile = '',
     [bool]$RequireManuscriptApproval = $false,
     [string]$ApprovalTokenFile,
     [int]$TocDepth                 = 0,
@@ -62,6 +63,16 @@ function Get-TextHash {
     return ([System.BitConverter]::ToString($hashBytes)).Replace('-', '').ToLowerInvariant().Substring(0, 16)
 }
 
+function Get-FileTextHashOrEmpty {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path $Path)) {
+        return ''
+    }
+
+    return Get-TextHash -Text ([System.IO.File]::ReadAllText($Path, [System.Text.Encoding]::UTF8))
+}
+
 function Get-MermaidCommandSpec {
     $mmdc = Get-Command mmdc -ErrorAction SilentlyContinue
     if ($mmdc) {
@@ -82,7 +93,8 @@ function Invoke-MermaidRender {
         [string]$DiagramText,
         [string]$OutputPath,
         [ValidateSet('svg', 'png')] [string]$Format,
-        [string]$ConfigFile = ''
+        [string]$ConfigFile = '',
+        [string]$PuppeteerConfigFile = ''
     )
 
     if (Test-Path $OutputPath) { return $true }
@@ -101,6 +113,9 @@ function Invoke-MermaidRender {
         if (-not [string]::IsNullOrWhiteSpace($ConfigFile) -and (Test-Path $ConfigFile)) {
             $renderArgs += @('-c', $ConfigFile)
         }
+        if (-not [string]::IsNullOrWhiteSpace($PuppeteerConfigFile) -and (Test-Path $PuppeteerConfigFile)) {
+            $renderArgs += @('-p', $PuppeteerConfigFile)
+        }
         & $CommandSpec['Command'] @renderArgs
         return ($LASTEXITCODE -eq 0 -and (Test-Path $OutputPath))
     }
@@ -117,7 +132,8 @@ function Convert-MermaidBlocksInMarkdown {
         [ValidateSet('auto', 'required')] [string]$Mode,
         [ValidateSet('svg', 'png')] [string]$Format,
         [bool]$FailOnError = $false,
-        [string]$ConfigFile = ''
+        [string]$ConfigFile = '',
+        [string]$PuppeteerConfigFile = ''
     )
 
     $sourceLines = Get-Content -Path $Path -Encoding UTF8
@@ -126,6 +142,7 @@ function Convert-MermaidBlocksInMarkdown {
     $mermaidBuffer = New-Object 'System.Collections.Generic.List[string]'
     $imagesRoot = Join-Path $StageBookRoot 'images\mermaid'
     New-Item -ItemType Directory -Path $imagesRoot -Force | Out-Null
+    $configHash = Get-FileTextHashOrEmpty -Path $ConfigFile
 
     $insideFence = $false
     $fenceChar = $null
@@ -144,18 +161,18 @@ function Convert-MermaidBlocksInMarkdown {
             if ($line -match "^\s*$([regex]::Escape($mermaidFenceChar)){$mermaidFenceLength,}\s*$") {
                 $blockCount += 1
                 $diagramText = ($mermaidBuffer.ToArray() -join [Environment]::NewLine).Trim()
-                $hash = Get-TextHash -Text "$Format`n$diagramText"
+                $hash = Get-TextHash -Text "$Format`n$configHash`n$diagramText"
                 $imageFileName = "mermaid-$hash.$Format"
                 $imagePath = Join-Path $imagesRoot $imageFileName
                 $imageMarkdownPath = "images/mermaid/$imageFileName"
 
                 $rendered = $false
                 if (-not [string]::IsNullOrWhiteSpace($diagramText)) {
-                    $rendered = Invoke-MermaidRender -CommandSpec $CommandSpec -DiagramText $diagramText -OutputPath $imagePath -Format $Format -ConfigFile $ConfigFile
+                    $rendered = Invoke-MermaidRender -CommandSpec $CommandSpec -DiagramText $diagramText -OutputPath $imagePath -Format $Format -ConfigFile $ConfigFile -PuppeteerConfigFile $PuppeteerConfigFile
                 }
 
                 if ($rendered) {
-                    $resultLines.Add("$mermaidIndent![Mermaid diagram]($imageMarkdownPath)")
+                    $resultLines.Add("$mermaidIndent![]($imageMarkdownPath)")
                     $renderedCount += 1
                     $fileChanged = $true
                 }
@@ -225,7 +242,8 @@ function Invoke-MermaidPreprocessing {
         [ValidateSet('off', 'auto', 'required')] [string]$Mode = 'required',
         [ValidateSet('svg', 'png')] [string]$Format = 'svg',
         [bool]$FailOnError = $true,
-        [string]$ConfigFile = ''
+        [string]$ConfigFile = '',
+        [string]$PuppeteerConfigFile = ''
     )
 
     if ($Mode -eq 'off') { return }
@@ -252,7 +270,7 @@ function Invoke-MermaidPreprocessing {
 
     Write-Host "Rendering Mermaid diagrams using $($commandSpec['Label'])..." -ForegroundColor Cyan
     foreach ($file in $markdownFiles) {
-        [void](Convert-MermaidBlocksInMarkdown -Path $file.FullName -StageBookRoot $StageBookRoot -CommandSpec $commandSpec -Mode $Mode -Format $Format -FailOnError $FailOnError -ConfigFile $ConfigFile)
+        [void](Convert-MermaidBlocksInMarkdown -Path $file.FullName -StageBookRoot $StageBookRoot -CommandSpec $commandSpec -Mode $Mode -Format $Format -FailOnError $FailOnError -ConfigFile $ConfigFile -PuppeteerConfigFile $PuppeteerConfigFile)
     }
 }
 
@@ -292,7 +310,7 @@ function Invoke-HeadlessBrowser {
     }
 
     & $Browser @Arguments
-    for ($i = 0; $i -lt 30; $i++) {
+    for ($i = 0; $i -lt 150; $i++) {
         if (Test-Path $ExpectedOutput) { return }
         Start-Sleep -Milliseconds 200
     }
@@ -305,7 +323,7 @@ function Invoke-HeadlessBrowser {
     if ($printToPdfArg) { $fallbackArgs += $printToPdfArg }
     $fallbackArgs += $urlArg
     & $Browser @fallbackArgs
-    for ($i = 0; $i -lt 30; $i++) {
+    for ($i = 0; $i -lt 150; $i++) {
         if (Test-Path $ExpectedOutput) { return }
         Start-Sleep -Milliseconds 200
     }
@@ -626,8 +644,14 @@ try {
         Copy-Item -Path $outputImages -Destination (Join-Path $stageBookRoot 'images') -Recurse -Force
     }
 
+    # Clear staged mermaid images before re-rendering to ensure fresh generation with current config
+    $stagedMermaidDir = Join-Path $stageBookRoot 'images\mermaid'
+    if (Test-Path $stagedMermaidDir) {
+        Remove-Item -Path "$stagedMermaidDir\*" -Force -Recurse -ErrorAction SilentlyContinue
+    }
+
     Write-Host 'Step 3 - Rendering Mermaid diagrams...' -ForegroundColor Cyan
-    Invoke-MermaidPreprocessing -StageBookRoot $stageBookRoot -Mode $MermaidMode -Format $MermaidFormat -FailOnError $FailOnMermaidError -ConfigFile $MermaidConfigFile
+    Invoke-MermaidPreprocessing -StageBookRoot $stageBookRoot -Mode $MermaidMode -Format $MermaidFormat -FailOnError $FailOnMermaidError -ConfigFile $MermaidConfigFile -PuppeteerConfigFile $MermaidPuppeteerConfigFile
 
     $copiedArtifacts = New-Object 'System.Collections.Generic.List[string]'
 
@@ -694,6 +718,8 @@ try {
             '--no-sandbox',
             '--disable-extensions',
             '--disable-background-networking',
+            '--no-pdf-header-footer',
+            '--print-to-pdf-no-header',
             '--allow-file-access-from-files',
             '--no-first-run',
             '--no-default-browser-check',
@@ -709,6 +735,9 @@ try {
     $stagedMermaidDir = Join-Path $stageBookRoot 'images\mermaid'
     if (Test-Path $stagedMermaidDir) {
         $outputMermaidDir = Join-Path $OutputDir 'images\mermaid'
+        if (Test-Path $outputMermaidDir) {
+            Remove-Item -Path $outputMermaidDir -Recurse -Force
+        }
         Copy-Item -Path $stagedMermaidDir -Destination $outputMermaidDir -Recurse -Force
         Write-Host "OUTPUT: $outputMermaidDir" -ForegroundColor Green
     }

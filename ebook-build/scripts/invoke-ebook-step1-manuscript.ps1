@@ -18,7 +18,9 @@ param(
     [string]$CoverTemplateMode  = 'auto',
     [string]$CoverTemplate      = 'classic',
     [switch]$NumberHeadings,
-    [switch]$PreserveTemp
+    [switch]$PreserveTemp,
+    [string]$SamplesRoot        = '',
+    [string]$SamplesTitle       = 'Samples Catalog'
 )
 
 Set-StrictMode -Version Latest
@@ -368,6 +370,85 @@ try {
     $manuscriptDest = Join-Path $OutputDir ("$ProjectName.manuscript.md")
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($manuscriptDest, ($manuscriptLines.ToArray() -join [Environment]::NewLine).TrimEnd() + [Environment]::NewLine, $utf8NoBom)
+
+    # -----------------------------------------------------------------------
+    # Optional: append samples catalog
+    # -----------------------------------------------------------------------
+    if (-not [string]::IsNullOrWhiteSpace($SamplesRoot) -and (Test-Path $SamplesRoot)) {
+        $resolvedSamplesRoot = (Resolve-Path $SamplesRoot).ProviderPath
+
+        $catalogLines = New-Object 'System.Collections.Generic.List[string]'
+        $catalogLines.Add('')
+        $catalogLines.Add('---')
+        $catalogLines.Add('')
+        $catalogLines.Add("# $SamplesTitle")
+        $catalogLines.Add('')
+
+        $allSampleFiles = @(Get-ChildItem -Path $resolvedSamplesRoot -Recurse -File -Filter '*.md' -ErrorAction SilentlyContinue |
+            Sort-Object FullName)
+
+        $allSampleDirectories = @($allSampleFiles |
+            ForEach-Object { Split-Path $_.FullName -Parent } |
+            Sort-Object -Unique)
+
+        $nonReadmeCount = 0
+        foreach ($directoryPath in $allSampleDirectories) {
+            $relativeDirectory = $directoryPath.Substring($resolvedSamplesRoot.Length).TrimStart('\', '/').Replace('\', '/')
+            if ([string]::IsNullOrWhiteSpace($relativeDirectory)) {
+                continue
+            }
+
+            $depth = @($relativeDirectory -split '/').Count
+            $headingLevel = [Math]::Min(6, 1 + $depth)
+            Write-Host "  [DIR] H$headingLevel $relativeDirectory" -ForegroundColor Cyan
+            $catalogLines.Add((('#' * $headingLevel) + ' ' + $relativeDirectory))
+            $catalogLines.Add('')
+
+            $directoryFiles = @($allSampleFiles |
+                Where-Object { (Split-Path $_.FullName -Parent) -eq $directoryPath } |
+                Sort-Object Name)
+
+            $readmeFile = $directoryFiles | Where-Object { $_.Name -ieq 'README.md' } | Select-Object -First 1
+            if ($readmeFile) {
+                Write-Host "    [README] $($readmeFile.Name) -> Markdown body" -ForegroundColor Yellow
+                $readmeLines = @(Get-Content -Path $readmeFile.FullName -Encoding UTF8)
+                foreach ($line in $readmeLines) { $catalogLines.Add($line) }
+                $catalogLines.Add('')
+            }
+
+            $nonReadmeFiles = @($directoryFiles | Where-Object { $_.Name -ine 'README.md' })
+            foreach ($sampleFile in $nonReadmeFiles) {
+                $fileLines = @(Get-Content -Path $sampleFile.FullName -Encoding UTF8)
+                $maxBacktickRun = 0
+                foreach ($line in $fileLines) {
+                    $matches = [regex]::Matches($line, '`{3,}')
+                    foreach ($match in $matches) {
+                        if ($match.Value.Length -gt $maxBacktickRun) {
+                            $maxBacktickRun = $match.Value.Length
+                        }
+                    }
+                }
+                $fenceLen = [Math]::Max(4, $maxBacktickRun + 1)
+                $openFence = ('`' * $fenceLen) + 'markdown'
+                $closeFence = ('`' * $fenceLen)
+
+                Write-Host "    [FILE] $($sampleFile.Name) (fence=$fenceLen)" -ForegroundColor Gray
+                $catalogLines.Add("- $($sampleFile.Name)")
+                $catalogLines.Add($openFence)
+                foreach ($line in $fileLines) { $catalogLines.Add($line) }
+                $catalogLines.Add($closeFence)
+                $catalogLines.Add('')
+                $nonReadmeCount++
+            }
+        }
+
+        $catalogText = $catalogLines.ToArray() -join [Environment]::NewLine
+        [System.IO.File]::AppendAllText($manuscriptDest, $catalogText, $utf8NoBom)
+        Write-Host "SAMPLES CATALOG: $($allSampleFiles.Count) files scanned, $nonReadmeCount files appended as code blocks." -ForegroundColor Green
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($SamplesRoot)) {
+        Write-Warning "SamplesRoot not found, skipping catalog generation: $SamplesRoot"
+    }
 
     Write-Host "OUTPUT: $manuscriptDest" -ForegroundColor Green
     Write-Host 'Step 1 complete. Review manuscript, then run Step 2 and Step 3.' -ForegroundColor Green

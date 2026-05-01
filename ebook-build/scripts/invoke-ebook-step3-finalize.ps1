@@ -18,6 +18,7 @@ param(
     [ValidateSet('svg', 'png')]
     [string]$MermaidFormat         = 'svg',
     [bool]$FailOnMermaidError      = $true,
+    [string]$MermaidConfigFile     = '',
     [bool]$RequireManuscriptApproval = $false,
     [string]$ApprovalTokenFile,
     [int]$TocDepth                 = 0,
@@ -80,7 +81,8 @@ function Invoke-MermaidRender {
         [hashtable]$CommandSpec,
         [string]$DiagramText,
         [string]$OutputPath,
-        [ValidateSet('svg', 'png')] [string]$Format
+        [ValidateSet('svg', 'png')] [string]$Format,
+        [string]$ConfigFile = ''
     )
 
     if (Test-Path $OutputPath) { return $true }
@@ -95,7 +97,10 @@ function Invoke-MermaidRender {
             $renderArgs += @($CommandSpec['Arguments'])
         }
 
-        $renderArgs += @('-i', $inputPath, '-o', $OutputPath, '-e', $Format, '-b', 'transparent')
+        $renderArgs += @('-i', $inputPath, '-o', $OutputPath, '-e', $Format, '-b', 'white')
+        if (-not [string]::IsNullOrWhiteSpace($ConfigFile) -and (Test-Path $ConfigFile)) {
+            $renderArgs += @('-c', $ConfigFile)
+        }
         & $CommandSpec['Command'] @renderArgs
         return ($LASTEXITCODE -eq 0 -and (Test-Path $OutputPath))
     }
@@ -111,7 +116,8 @@ function Convert-MermaidBlocksInMarkdown {
         [hashtable]$CommandSpec,
         [ValidateSet('auto', 'required')] [string]$Mode,
         [ValidateSet('svg', 'png')] [string]$Format,
-        [bool]$FailOnError = $false
+        [bool]$FailOnError = $false,
+        [string]$ConfigFile = ''
     )
 
     $sourceLines = Get-Content -Path $Path -Encoding UTF8
@@ -145,7 +151,7 @@ function Convert-MermaidBlocksInMarkdown {
 
                 $rendered = $false
                 if (-not [string]::IsNullOrWhiteSpace($diagramText)) {
-                    $rendered = Invoke-MermaidRender -CommandSpec $CommandSpec -DiagramText $diagramText -OutputPath $imagePath -Format $Format
+                    $rendered = Invoke-MermaidRender -CommandSpec $CommandSpec -DiagramText $diagramText -OutputPath $imagePath -Format $Format -ConfigFile $ConfigFile
                 }
 
                 if ($rendered) {
@@ -218,7 +224,8 @@ function Invoke-MermaidPreprocessing {
         [string]$StageBookRoot,
         [ValidateSet('off', 'auto', 'required')] [string]$Mode = 'required',
         [ValidateSet('svg', 'png')] [string]$Format = 'svg',
-        [bool]$FailOnError = $true
+        [bool]$FailOnError = $true,
+        [string]$ConfigFile = ''
     )
 
     if ($Mode -eq 'off') { return }
@@ -245,7 +252,7 @@ function Invoke-MermaidPreprocessing {
 
     Write-Host "Rendering Mermaid diagrams using $($commandSpec['Label'])..." -ForegroundColor Cyan
     foreach ($file in $markdownFiles) {
-        [void](Convert-MermaidBlocksInMarkdown -Path $file.FullName -StageBookRoot $StageBookRoot -CommandSpec $commandSpec -Mode $Mode -Format $Format -FailOnError $FailOnError)
+        [void](Convert-MermaidBlocksInMarkdown -Path $file.FullName -StageBookRoot $StageBookRoot -CommandSpec $commandSpec -Mode $Mode -Format $Format -FailOnError $FailOnError -ConfigFile $ConfigFile)
     }
 }
 
@@ -620,7 +627,7 @@ try {
     }
 
     Write-Host 'Step 3 - Rendering Mermaid diagrams...' -ForegroundColor Cyan
-    Invoke-MermaidPreprocessing -StageBookRoot $stageBookRoot -Mode $MermaidMode -Format $MermaidFormat -FailOnError $FailOnMermaidError
+    Invoke-MermaidPreprocessing -StageBookRoot $stageBookRoot -Mode $MermaidMode -Format $MermaidFormat -FailOnError $FailOnMermaidError -ConfigFile $MermaidConfigFile
 
     $copiedArtifacts = New-Object 'System.Collections.Generic.List[string]'
 

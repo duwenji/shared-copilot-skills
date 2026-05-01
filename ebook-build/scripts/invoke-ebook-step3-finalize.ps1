@@ -727,9 +727,9 @@ try {
             $htmlUrl
         )
 
-        Remove-Item -Path $printHtml -Force -ErrorAction SilentlyContinue
         $copiedArtifacts.Add($pdfDest)
         Write-Host "OUTPUT: $pdfDest" -ForegroundColor Green
+        Write-Host "OUTPUT: $printHtml" -ForegroundColor Green
     }
 
     $stagedMermaidDir = Join-Path $stageBookRoot 'images\mermaid'

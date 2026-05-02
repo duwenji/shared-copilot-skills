@@ -429,7 +429,7 @@ try {
                     }
                 }
                 $fenceLen = [Math]::Max(4, $maxBacktickRun + 1)
-                $openFence = ('`' * $fenceLen) + 'markdown'
+                $openFence = ('`' * $fenceLen) + 'text'
                 $closeFence = ('`' * $fenceLen)
 
                 Write-Host "    [FILE] $($sampleFile.Name) (fence=$fenceLen)" -ForegroundColor Gray

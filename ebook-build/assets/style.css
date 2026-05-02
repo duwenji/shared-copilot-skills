@@ -146,18 +146,19 @@ code {
 }
 
 pre {
-  background-color: #0d1117;
-  border: 1px solid #30363d;
+  background-color: #f8fafc;
+  border: 1px solid #d0d7de;
+  border-left: 4px solid #58a6ff;
   border-radius: 8px;
   overflow-x: auto;
   page-break-inside: avoid;
-  padding: 1em;
+  padding: 1em 1.1em;
   margin: 1em 0;
   font-family: "Consolas", "Courier New", monospace;
-  font-size: 0.85em;
-  line-height: 1.55;
+  font-size: 0.92em;
+  line-height: 1.68;
   text-align: left;
-  color: #e6edf3;
+  color: #1f2937;
 }
 
 pre code {

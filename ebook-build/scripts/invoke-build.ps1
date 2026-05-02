@@ -84,6 +84,7 @@ $outputDirValue                    = Get-ConfigValue -Config $config -Name 'outp
 $metadataFileValue                 = Get-ConfigValue -Config $config -Name 'metadataFile'
 $kdpMetadataFileValue              = Get-ConfigValue -Config $config -Name 'kdpMetadataFile'
 $styleFileValue                    = Get-ConfigValue -Config $config -Name 'styleFile'
+$coverStyleFileValue               = Get-ConfigValue -Config $config -Name 'coverStyleFile'
 $formatsValue                      = Get-ConfigValue -Config $config -Name 'formats'
 $chapterDirPatternValue            = Get-ConfigValue -Config $config -Name 'chapterDirPattern'
 $chapterFilePatternValue           = Get-ConfigValue -Config $config -Name 'chapterFilePattern'
@@ -135,6 +136,9 @@ if (-not $kdpMetadataFile) {
 
 $styleFile = Resolve-ConfiguredPath -BasePath $RepoRoot -Value $styleFileValue
 if (-not $styleFile) { $styleFile = Join-Path $sharedSkillRoot 'assets/style.css' }
+
+$coverStyleFile = Resolve-ConfiguredPath -BasePath $RepoRoot -Value $coverStyleFileValue
+if (-not $coverStyleFile) { $coverStyleFile = Join-Path $sharedSkillRoot 'assets/cover.css' }
 
 $formats            = @(if ($null -ne $formatsValue) { $formatsValue } else { 'epub', 'pdf', 'kdp-markdown' })
 $chapterDirPattern  = [string]$(if ($chapterDirPatternValue)  { $chapterDirPatternValue }  else { '^\d{2}-' })
@@ -215,6 +219,7 @@ switch ($BuildStep) {
             -MetadataFile      $metadataFile `
             -KindleTemplateDir $scriptsDir `
             -StyleFile         $styleFile `
+            -CoverStyleFile    $coverStyleFile `
             -CoverFile         $coverFile `
             -CoverTemplateMode $coverTemplateMode `
             -CoverTemplate     $coverTemplate

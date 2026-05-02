@@ -9,6 +9,7 @@ param(
     [string]$MetadataFile,
     [string]$KindleTemplateDir,
     [string]$StyleFile,
+    [string]$CoverStyleFile,
     [string]$CoverFile         = '00-COVER.md',
     [ValidateSet('auto', 'file', 'template')]
     [string]$CoverTemplateMode = 'auto',
@@ -143,6 +144,17 @@ Ensure-Path -Path $SourceRoot -Label 'SourceRoot'
 Ensure-Path -Path $MetadataFile -Label 'MetadataFile'
 Ensure-Path -Path $StyleFile -Label 'StyleFile'
 
+# Resolve cover CSS: use CoverStyleFile if provided, otherwise fall back to shared cover.css
+$effectiveCoverStyleFile = $CoverStyleFile
+if (-not $effectiveCoverStyleFile) {
+    $effectiveCoverStyleFile = Join-Path (Split-Path -Parent $PSScriptRoot) 'assets\cover.css'
+}
+if (-not (Test-Path $effectiveCoverStyleFile)) {
+    Write-Warning "Cover style file not found ($effectiveCoverStyleFile), falling back to StyleFile."
+    $effectiveCoverStyleFile = $StyleFile
+}
+Ensure-Path -Path $effectiveCoverStyleFile -Label 'CoverStyleFile'
+
 if (-not (Get-Command pandoc -ErrorAction SilentlyContinue)) {
     throw 'pandoc is required but was not found in PATH.'
 }
@@ -158,9 +170,7 @@ if (-not (Test-Path $OutputDir)) {
 }
 
 $skillRoot = Split-Path -Parent $PSScriptRoot
-$printStyleFile = Join-Path $skillRoot 'assets\print.css'
 $coverTemplateRoot = Join-Path $skillRoot 'assets\cover-templates'
-Ensure-Path -Path $printStyleFile -Label 'print.css'
 
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("ebook-step2-" + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
@@ -199,8 +209,7 @@ try {
             "--to=html5",
             "--standalone",
             "--metadata-file=$MetadataFile",
-            "--css=$StyleFile",
-            "--css=$printStyleFile",
+            "--css=$effectiveCoverStyleFile",
             "--output=$coverHtml",
             (Split-Path -Leaf $effectiveCoverPath)
         )
@@ -240,6 +249,7 @@ try {
         '--no-first-run',
         '--no-default-browser-check',
         '--print-to-pdf-no-header',
+        '--no-pdf-header-footer',
         "--print-to-pdf=$coverPdf",
         $coverUrl
     )

@@ -664,6 +664,7 @@ try {
             & pandoc `
                 "--from=markdown" `
                 "--to=epub3" `
+                "--syntax-highlighting=none" `
                 "--toc" `
                 "--toc-depth=$resolvedTocDepth" `
                 "--metadata-file=$MetadataFile" `
@@ -696,6 +697,7 @@ try {
                 "--from=markdown" `
                 "--to=html5" `
                 "--standalone" `
+                "--syntax-highlighting=none" `
                 "--toc" `
                 "--toc-depth=$resolvedTocDepth" `
                 "--metadata-file=$MetadataFile" `

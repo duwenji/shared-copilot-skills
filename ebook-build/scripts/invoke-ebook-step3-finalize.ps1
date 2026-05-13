@@ -642,6 +642,13 @@ try {
     $outputImages = Join-Path $OutputDir 'images'
     if (Test-Path $outputImages) {
         Copy-Item -Path $outputImages -Destination (Join-Path $stageBookRoot 'images') -Recurse -Force
+
+        $stagedExamplesRoot = Join-Path $stageBookRoot 'examples'
+        $outputExamplesRoot = Join-Path $outputImages 'examples'
+        if (Test-Path $outputExamplesRoot) {
+            New-Item -ItemType Directory -Path $stagedExamplesRoot -Force | Out-Null
+            Copy-Item -Path (Join-Path $outputExamplesRoot '*') -Destination $stagedExamplesRoot -Recurse -Force
+        }
     }
 
     # Clear staged mermaid images before re-rendering to ensure fresh generation with current config
@@ -697,6 +704,7 @@ try {
                 "--from=markdown" `
                 "--to=html5" `
                 "--standalone" `
+                "--embed-resources" `
                 "--syntax-highlighting=none" `
                 "--toc" `
                 "--toc-depth=$resolvedTocDepth" `

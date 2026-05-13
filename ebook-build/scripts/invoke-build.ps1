@@ -107,6 +107,7 @@ $headingNumberingValue             = Get-ConfigValue -Config $config -Name 'head
 $tocDepthValue                     = Get-ConfigValue -Config $config -Name 'tocDepth'
 $samplesRootValue                  = Get-ConfigValue -Config $config -Name 'samplesRoot'
 $samplesTitleValue                 = Get-ConfigValue -Config $config -Name 'samplesTitle'
+$collectAssetsValue               = Get-ConfigValue -Config $config -Name 'collectAssets'
 $preserveTempValue                 = Get-ConfigValue -Config $config -Name 'preserveTemp'
 
 # ---------------------------------------------------------------------------
@@ -161,6 +162,15 @@ $headingNumbering           = [bool]$(if ($null -ne $headingNumberingValue)     
 $tocDepth = if ($null -ne $tocDepthValue) { [int]$tocDepthValue } else { 0 }
 $samplesRoot   = Resolve-ConfiguredPath -BasePath $RepoRoot -Value $samplesRootValue
 $samplesTitle  = if ($samplesTitleValue) { [string]$samplesTitleValue } else { 'Samples Catalog' }
+$collectAssets = if ($null -ne $collectAssetsValue) { 
+    if ($collectAssetsValue -is [bool]) { 
+        $collectAssetsValue 
+    } else {
+        [System.Convert]::ToBoolean($collectAssetsValue)
+    }
+} else { 
+    $false 
+}
 $preserveTemp  = [bool]$(if ($null -ne $preserveTempValue) { $preserveTempValue } else { $false })
 
 # ---------------------------------------------------------------------------
@@ -173,25 +183,28 @@ switch ($BuildStep) {
         # INPUT : source docs, metadata.yaml
         # OUTPUT: $outputDir/$projectName.manuscript.md
         $script = Join-Path $scriptsDir 'invoke-ebook-step1-manuscript.ps1'
-        $step1Params = @(
-            '-SourceRoot',         $sourceRoot,
-            '-OutputDir',          $outputDir,
-            '-ProjectName',        $projectName,
-            '-MetadataFile',       $metadataFile,
-            '-KindleTemplateDir',  $scriptsDir,
-            '-StyleFile',          $styleFile,
-            '-ChapterDirPattern',  $chapterDirPattern,
-            '-ChapterFilePattern', $chapterFilePattern,
-            '-CoverFile',          $coverFile,
-            '-ManuscriptLeadFile', $manuscriptLeadFile,
-            '-CoverTemplateMode',  $coverTemplateMode,
-            '-CoverTemplate',      $coverTemplate,
-            '-SamplesTitle',       $samplesTitle
-        )
-        if ($skipCoverInManuscript) { $step1Params += '-SkipCoverInManuscript' }
-        if ($headingNumbering)      { $step1Params += '-NumberHeadings' }
-        if ($preserveTemp)          { $step1Params += '-PreserveTemp' }
-        if ($samplesRoot)           { $step1Params += @('-SamplesRoot', $samplesRoot) }
+        
+        $step1Params = @{
+            SourceRoot         = $sourceRoot
+            OutputDir          = $outputDir
+            ProjectName        = $projectName
+            MetadataFile       = $metadataFile
+            KindleTemplateDir  = $scriptsDir
+            StyleFile          = $styleFile
+            ChapterDirPattern  = $chapterDirPattern
+            ChapterFilePattern = $chapterFilePattern
+            CoverFile          = $coverFile
+            ManuscriptLeadFile = $manuscriptLeadFile
+            CoverTemplateMode  = $coverTemplateMode
+            CoverTemplate      = $coverTemplate
+            CollectAssets      = $collectAssets
+            SamplesTitle       = $samplesTitle
+        }
+        
+        if ($skipCoverInManuscript) { $step1Params.SkipCoverInManuscript = $true }
+        if ($headingNumbering)      { $step1Params.NumberHeadings = $true }
+        if ($preserveTemp)          { $step1Params.PreserveTemp = $true }
+        if ($samplesRoot)           { $step1Params.SamplesRoot = $samplesRoot }
 
         & pwsh -NoProfile -ExecutionPolicy Bypass -File $script @step1Params
         if ($LASTEXITCODE -ne 0) { throw "Step 1 failed with exit code $LASTEXITCODE" }

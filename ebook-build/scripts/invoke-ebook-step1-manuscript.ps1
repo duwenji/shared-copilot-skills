@@ -18,6 +18,7 @@ param(
     [string]$CoverTemplateMode  = 'auto',
     [string]$CoverTemplate      = 'classic',
     [switch]$NumberHeadings,
+    [bool]$CollectAssets       = $false,
     [switch]$PreserveTemp,
     [string]$SamplesRoot        = '',
     [string]$SamplesTitle       = 'Samples Catalog'
@@ -264,6 +265,126 @@ function Get-ChapterSectionFiles {
     return @($matchedFiles.ToArray() | Sort-Object RelativePath)
 }
 
+function Get-NormalizedAssetReference {
+    param([string]$RawReference)
+
+    if ([string]::IsNullOrWhiteSpace($RawReference)) { return $null }
+
+    $value = $RawReference.Trim()
+    if ($value.StartsWith('<') -and $value.EndsWith('>')) {
+        $value = $value.Substring(1, $value.Length - 2).Trim()
+    }
+
+    $firstToken = ($value -split '\s+', 2)[0].Trim()
+    if ([string]::IsNullOrWhiteSpace($firstToken)) { return $null }
+
+    $normalized = $firstToken.Replace('\\', '/').Trim()
+    if ($normalized.StartsWith('./')) {
+        $normalized = $normalized.Substring(2)
+    }
+
+    if ([string]::IsNullOrWhiteSpace($normalized)) { return $null }
+    if ($normalized.StartsWith('#')) { return $null }
+    if ($normalized -match '^(?i)(https?|data|mailto):') { return $null }
+    if ([System.IO.Path]::IsPathRooted($normalized)) { return $null }
+    if ($normalized -like '../*') { return $null }
+
+    return $normalized
+}
+
+function Get-AssetReferencesFromFile {
+    param([string]$MarkdownPath)
+
+    $text = Get-Content -Path $MarkdownPath -Raw -Encoding UTF8
+    $results = New-Object 'System.Collections.Generic.List[string]'
+
+    foreach ($match in [regex]::Matches($text, '!\[[^\]]*\]\((?<ref>[^)]+)\)')) {
+        $normalized = Get-NormalizedAssetReference -RawReference $match.Groups['ref'].Value
+        if ($normalized) { $results.Add($normalized) }
+    }
+
+    foreach ($match in [regex]::Matches($text, '<img\b[^>]*\bsrc\s*=\s*[''"''](?<ref>[^''""]+)[''"'']')) {
+        $normalized = Get-NormalizedAssetReference -RawReference $match.Groups['ref'].Value
+        if ($normalized) { $results.Add($normalized) }
+    }
+
+    return @($results.ToArray() | Select-Object -Unique)
+}
+
+function Add-AssetReferencesForFile {
+    param(
+        [string]$MarkdownPath,
+        [string]$SourceRootResolved,
+        [System.Collections.Generic.Dictionary[string, string]]$AssetMap,
+        [System.Collections.Generic.List[object]]$Manifest
+    )
+
+    if (-not (Test-Path $MarkdownPath)) { return }
+
+    $baseDir = Split-Path -Parent $MarkdownPath
+    foreach ($reference in (Get-AssetReferencesFromFile -MarkdownPath $MarkdownPath)) {
+        $resolvedCandidate = [System.IO.Path]::GetFullPath((Join-Path $baseDir $reference))
+
+        $manifestEntry = [ordered]@{
+            sourceFile = $MarkdownPath
+            reference = $reference
+            sourcePath = $resolvedCandidate
+            outputRelativePath = ("images/{0}" -f $reference)
+            status = 'pending'
+            reason = ''
+        }
+
+        if (-not $resolvedCandidate.StartsWith($SourceRootResolved, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $manifestEntry.status = 'skipped'
+            $manifestEntry.reason = 'outside-source-root'
+            $Manifest.Add([PSCustomObject]$manifestEntry)
+            continue
+        }
+
+        if (-not (Test-Path $resolvedCandidate -PathType Leaf)) {
+            $manifestEntry.status = 'missing'
+            $manifestEntry.reason = 'file-not-found'
+            $Manifest.Add([PSCustomObject]$manifestEntry)
+            continue
+        }
+
+        if ($AssetMap.ContainsKey($reference)) {
+            if ($AssetMap[$reference] -ne $resolvedCandidate) {
+                throw "Asset path collision for '$reference'. Existing: '$($AssetMap[$reference])' Incoming: '$resolvedCandidate'"
+            }
+            $manifestEntry.status = 'duplicate'
+            $manifestEntry.reason = 'already-registered'
+            $Manifest.Add([PSCustomObject]$manifestEntry)
+            continue
+        }
+
+        $AssetMap[$reference] = $resolvedCandidate
+        $manifestEntry.status = 'resolved'
+        $Manifest.Add([PSCustomObject]$manifestEntry)
+    }
+}
+
+function Copy-CollectedAssets {
+    param(
+        [string]$OutputDir,
+        [System.Collections.Generic.Dictionary[string, string]]$AssetMap
+    )
+
+    $imagesRoot = Join-Path $OutputDir 'images'
+    New-Item -ItemType Directory -Path $imagesRoot -Force | Out-Null
+
+    foreach ($pair in $AssetMap.GetEnumerator()) {
+        $reference = $pair.Key
+        $sourcePath = $pair.Value
+        $destination = Join-Path $imagesRoot ($reference -replace '/', '\\')
+        $destinationDir = Split-Path -Parent $destination
+        if (-not (Test-Path $destinationDir)) {
+            New-Item -ItemType Directory -Path $destinationDir -Force | Out-Null
+        }
+        Copy-Item -Path $sourcePath -Destination $destination -Force
+    }
+}
+
 Ensure-Path -Path $SourceRoot -Label 'SourceRoot'
 Ensure-Path -Path $MetadataFile -Label 'MetadataFile'
 
@@ -326,13 +447,22 @@ try {
     $manuscriptLines = New-Object 'System.Collections.Generic.List[string]'
 
     $leadPath = Resolve-OptionalFilePath -PrimaryRoot $contentRoot -FallbackRoot $resolvedSourceRoot -RelativePath $ManuscriptLeadFile
+    $assetMap = New-Object 'System.Collections.Generic.Dictionary[string, string]' ([System.StringComparer]::OrdinalIgnoreCase)
+    $assetManifest = New-Object 'System.Collections.Generic.List[object]'
+
     if ($leadPath) {
         Append-FileContent -Lines $manuscriptLines -Path $leadPath
+        if ($CollectAssets) {
+            Add-AssetReferencesForFile -MarkdownPath $leadPath -SourceRootResolved $resolvedSourceRoot -AssetMap $assetMap -Manifest $assetManifest
+        }
         $manuscriptLines.Add('')
     }
 
     if ((-not $SkipCoverInManuscript) -and (Test-Path $effectiveCoverPath)) {
         Append-FileContent -Lines $manuscriptLines -Path $effectiveCoverPath
+        if ($CollectAssets) {
+            Add-AssetReferencesForFile -MarkdownPath $effectiveCoverPath -SourceRootResolved $resolvedSourceRoot -AssetMap $assetMap -Manifest $assetManifest
+        }
         $manuscriptLines.Add('')
     }
 
@@ -363,6 +493,9 @@ try {
             $headingLevelOffset = if ([string]::IsNullOrWhiteSpace($chapterTitle)) { 0 } else { 1 }
             $numberBaseLevel = if ([string]::IsNullOrWhiteSpace($chapterTitle)) { 1 } else { 2 }
             Append-FileContent -Lines $manuscriptLines -Path $sectionFile.File.FullName -NumberHeadings:$NumberHeadings -HeadingState $headingState -HeadingPrefix $headingPrefix -HeadingLevelOffset $headingLevelOffset -NumberBaseLevel $numberBaseLevel
+            if ($CollectAssets) {
+                Add-AssetReferencesForFile -MarkdownPath $sectionFile.File.FullName -SourceRootResolved $resolvedSourceRoot -AssetMap $assetMap -Manifest $assetManifest
+            }
             $manuscriptLines.Add('')
         }
     }
@@ -370,6 +503,35 @@ try {
     $manuscriptDest = Join-Path $OutputDir ("$ProjectName.manuscript.md")
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($manuscriptDest, ($manuscriptLines.ToArray() -join [Environment]::NewLine).TrimEnd() + [Environment]::NewLine, $utf8NoBom)
+
+    if ($CollectAssets) {
+        Copy-CollectedAssets -OutputDir $OutputDir -AssetMap $assetMap
+
+        $assetsManifestPath = Join-Path $OutputDir ("$ProjectName.assets.json")
+        
+        $missingCount = 0
+        foreach ($entry in $assetManifest) {
+            if ($entry.status -eq 'missing') { $missingCount++ }
+        }
+        
+        $entriesArray = $assetManifest.ToArray()
+        $generatedAtString = (Get-Date).ToString('s')
+        $assetMapCount = $assetMap.Count
+        
+        $manifestJson = ConvertTo-Json -InputObject @{
+            projectName = $ProjectName
+            generatedAt = $generatedAtString
+            totalResolved = $assetMapCount
+            totalMissing = $missingCount
+            entries = $entriesArray
+        } -Depth 6
+        
+        [System.IO.File]::WriteAllText($assetsManifestPath, $manifestJson, $utf8NoBom)
+
+        Write-Host "ASSETS: resolved=$($assetMap.Count), missing=$missingCount" -ForegroundColor Green
+        Write-Host "OUTPUT: $(Join-Path $OutputDir 'images')" -ForegroundColor Green
+        Write-Host "OUTPUT: $assetsManifestPath" -ForegroundColor Green
+    }
 
     # -----------------------------------------------------------------------
     # Optional: append samples catalog
@@ -401,7 +563,7 @@ try {
             $depth = @($relativeDirectory -split '/').Count
             $headingLevel = [Math]::Min(6, 1 + $depth)
             Write-Host "  [DIR] H$headingLevel $relativeDirectory" -ForegroundColor Cyan
-            $catalogLines.Add((('#' * $headingLevel) + ' ' + $relativeDirectory))
+            $catalogLines.Add((('#' * $headingLevel) +  + $relativeDirectory))
             $catalogLines.Add('')
 
             $directoryFiles = @($allSampleFiles |
@@ -461,3 +623,5 @@ finally {
         Remove-Item -Path $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
+
+

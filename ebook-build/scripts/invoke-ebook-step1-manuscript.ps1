@@ -294,8 +294,8 @@ function Get-NormalizedAssetReference {
 
 function Get-AssetReferencesFromFile {
     param([string]$MarkdownPath)
-
     $text = Get-Content -Path $MarkdownPath -Raw -Encoding UTF8
+    if ($null -eq $text) { $text = '' }
     $results = New-Object 'System.Collections.Generic.List[string]'
 
     foreach ($match in [regex]::Matches($text, '!\[[^\]]*\]\((?<ref>[^)]+)\)')) {
@@ -325,11 +325,26 @@ function Add-AssetReferencesForFile {
     foreach ($reference in (Get-AssetReferencesFromFile -MarkdownPath $MarkdownPath)) {
         $resolvedCandidate = [System.IO.Path]::GetFullPath((Join-Path $baseDir $reference))
 
+        # Namespace assets by the markdown's path relative to the source root to avoid collisions
+        $relativeBase = ''
+        try {
+            $relativeBase = [System.IO.Path]::GetRelativePath($SourceRootResolved, $baseDir).Replace('\', '/')
+        } catch {
+            $relativeBase = ''
+        }
+        if (-not [string]::IsNullOrWhiteSpace($relativeBase)) {
+            $relativeBase = ($relativeBase.TrimStart('./') + '/')
+        } else {
+            $relativeBase = ''
+        }
+
+        $outputRel = "images/$relativeBase$reference"
+
         $manifestEntry = [ordered]@{
             sourceFile = $MarkdownPath
             reference = $reference
             sourcePath = $resolvedCandidate
-            outputRelativePath = ("images/{0}" -f $reference)
+            outputRelativePath = $outputRel
             status = 'pending'
             reason = ''
         }
@@ -348,9 +363,11 @@ function Add-AssetReferencesForFile {
             continue
         }
 
-        if ($AssetMap.ContainsKey($reference)) {
-            if ($AssetMap[$reference] -ne $resolvedCandidate) {
-                throw "Asset path collision for '$reference'. Existing: '$($AssetMap[$reference])' Incoming: '$resolvedCandidate'"
+        $mapKey = $outputRel
+
+        if ($AssetMap.ContainsKey($mapKey)) {
+            if ($AssetMap[$mapKey] -ne $resolvedCandidate) {
+                throw "Asset path collision for output path '$mapKey'. Existing: '$($AssetMap[$mapKey])' Incoming: '$resolvedCandidate'"
             }
             $manifestEntry.status = 'duplicate'
             $manifestEntry.reason = 'already-registered'
@@ -358,7 +375,7 @@ function Add-AssetReferencesForFile {
             continue
         }
 
-        $AssetMap[$reference] = $resolvedCandidate
+        $AssetMap[$mapKey] = $resolvedCandidate
         $manifestEntry.status = 'resolved'
         $Manifest.Add([PSCustomObject]$manifestEntry)
     }

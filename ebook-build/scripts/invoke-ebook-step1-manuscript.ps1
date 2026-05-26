@@ -27,6 +27,9 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+Write-Host 'Step 1: Merge source chapters into manuscript - starting' -ForegroundColor Cyan
+Write-Host "Parameters: SourceRoot=$SourceRoot OutputDir=$OutputDir ProjectName=$ProjectName" -ForegroundColor DarkCyan
+
 function Ensure-Path {
     param([string]$Path, [string]$Label)
     if (-not (Test-Path $Path)) { throw "$Label not found: $Path" }
@@ -175,6 +178,7 @@ function Append-FileContent {
         if ($NumberHeadings -and $null -ne $HeadingState) {
             if ($effectiveLine -match '^\s*```') {
                 $HeadingState.InCodeFence = -not [bool]$HeadingState.InCodeFence
+                Write-Host "[DEBUG] Code fence toggle. InCodeFence=$($HeadingState.InCodeFence) (file=$Path)" -ForegroundColor Magenta
             }
             elseif (-not [bool]$HeadingState.InCodeFence) {
                 $headingMatch = [regex]::Match($effectiveLine, '^(#{1,6})\s+(.+?)\s*$')
@@ -206,6 +210,7 @@ function Append-FileContent {
                     }
 
                     $effectiveLine = "{0} {1} {2}" -f ('#' * $level), $number, $title
+                    Write-Host "[DEBUG] Renumbered heading in $Path -> $effectiveLine" -ForegroundColor Magenta
                 }
             }
         }
@@ -315,6 +320,7 @@ function Add-AssetReferencesForFile {
     param(
         [string]$MarkdownPath,
         [string]$SourceRootResolved,
+        [string]$ContentRootResolved,
         [System.Collections.Generic.Dictionary[string, string]]$AssetMap,
         [System.Collections.Generic.List[object]]$Manifest
     )
@@ -324,21 +330,50 @@ function Add-AssetReferencesForFile {
     $baseDir = Split-Path -Parent $MarkdownPath
     foreach ($reference in (Get-AssetReferencesFromFile -MarkdownPath $MarkdownPath)) {
         $resolvedCandidate = [System.IO.Path]::GetFullPath((Join-Path $baseDir $reference))
+        Write-Host "[DEBUG] Asset reference found in $MarkdownPath -> reference='$reference' resolved='$resolvedCandidate'" -ForegroundColor DarkCyan
 
-        # Namespace assets by the markdown's path relative to the source root to avoid collisions
-        $relativeBase = ''
+        # Namespace assets by the markdown's path relative to the content root (removes top-level chapter folder)
+        # Determine the markdown-relative base path and extract chapter/category if present
+        $relativeBaseFull = ''
+        $category = ''
         try {
-            $relativeBase = [System.IO.Path]::GetRelativePath($SourceRootResolved, $baseDir).Replace('\', '/')
+            if (-not [string]::IsNullOrWhiteSpace($ContentRootResolved)) {
+                $relativeBaseFull = [System.IO.Path]::GetRelativePath($ContentRootResolved, $baseDir).Replace('\\', '/')
+            } else {
+                $relativeBaseFull = [System.IO.Path]::GetRelativePath($SourceRootResolved, $baseDir).Replace('\\', '/')
+            }
         } catch {
-            $relativeBase = ''
+            $relativeBaseFull = ''
         }
-        if (-not [string]::IsNullOrWhiteSpace($relativeBase)) {
-            $relativeBase = ($relativeBase.TrimStart('./') + '/')
+
+        if (-not [string]::IsNullOrWhiteSpace($relativeBaseFull)) {
+            $relativeBaseFull = $relativeBaseFull.TrimStart('./')
+
+            $segments = $relativeBaseFull -split '/'
+            if ($segments.Length -gt 0 -and $segments[0] -match $chapterDirPattern) {
+                # First segment is a chapter dir like '04-ui' -> treat as category
+                $category = $segments[0]
+                if ($segments.Length -gt 1) {
+                    $relativeBase = ($segments[1..($segments.Length - 1)] -join '/') + '/'
+                } else {
+                    $relativeBase = ''
+                }
+            } else {
+                $category = ''
+                $relativeBase = if ($relativeBaseFull -ne '') { $relativeBaseFull + '/' } else { '' }
+            }
         } else {
             $relativeBase = ''
+            $category = ''
         }
 
-        $outputRel = "images/$relativeBase$reference"
+        # Build output relative path using category (if present). Do NOT include a top-level 'images/' prefix here;
+        # Copy-CollectedAssets will decide where to place the file on disk.
+        if (-not [string]::IsNullOrWhiteSpace($category)) {
+            $outputRel = "$category/$relativeBase$reference"
+        } else {
+            $outputRel = "$relativeBase$reference"
+        }
 
         $manifestEntry = [ordered]@{
             sourceFile = $MarkdownPath
@@ -352,6 +387,7 @@ function Add-AssetReferencesForFile {
         if (-not $resolvedCandidate.StartsWith($SourceRootResolved, [System.StringComparison]::OrdinalIgnoreCase)) {
             $manifestEntry.status = 'skipped'
             $manifestEntry.reason = 'outside-source-root'
+            Write-Host "[DEBUG] Skipping asset outside source root: $resolvedCandidate" -ForegroundColor Yellow
             $Manifest.Add([PSCustomObject]$manifestEntry)
             continue
         }
@@ -359,6 +395,7 @@ function Add-AssetReferencesForFile {
         if (-not (Test-Path $resolvedCandidate -PathType Leaf)) {
             $manifestEntry.status = 'missing'
             $manifestEntry.reason = 'file-not-found'
+            Write-Host "[DEBUG] Asset missing: $resolvedCandidate (sourceFile=$MarkdownPath reference=$reference)" -ForegroundColor Red
             $Manifest.Add([PSCustomObject]$manifestEntry)
             continue
         }
@@ -367,16 +404,19 @@ function Add-AssetReferencesForFile {
 
         if ($AssetMap.ContainsKey($mapKey)) {
             if ($AssetMap[$mapKey] -ne $resolvedCandidate) {
+                Write-Host "[DEBUG] Asset path collision for output path '$mapKey'. Existing: '$($AssetMap[$mapKey])' Incoming: '$resolvedCandidate'" -ForegroundColor Magenta
                 throw "Asset path collision for output path '$mapKey'. Existing: '$($AssetMap[$mapKey])' Incoming: '$resolvedCandidate'"
             }
             $manifestEntry.status = 'duplicate'
             $manifestEntry.reason = 'already-registered'
+            Write-Host "[DEBUG] Duplicate asset registration skipped for: $mapKey -> $resolvedCandidate" -ForegroundColor Yellow
             $Manifest.Add([PSCustomObject]$manifestEntry)
             continue
         }
 
         $AssetMap[$mapKey] = $resolvedCandidate
         $manifestEntry.status = 'resolved'
+        Write-Host "[DEBUG] Asset resolved: $mapKey -> $resolvedCandidate" -ForegroundColor Green
         $Manifest.Add([PSCustomObject]$manifestEntry)
     }
 }
@@ -393,6 +433,8 @@ function Copy-CollectedAssets {
     foreach ($pair in $AssetMap.GetEnumerator()) {
         $reference = $pair.Key
         $sourcePath = $pair.Value
+
+        # Place all assets under ebook-output/images, preserving any category prefix present in the reference
         $destination = Join-Path $imagesRoot ($reference -replace '/', '\\')
         $destinationDir = Split-Path -Parent $destination
         if (-not (Test-Path $destinationDir)) {
@@ -402,8 +444,173 @@ function Copy-CollectedAssets {
     }
 }
 
+function Update-ManuscriptLinks {
+    param(
+        [string]$AssetsPath,
+        [string]$ManuscriptPath
+    )
+
+    if (-not (Test-Path $AssetsPath)) {
+        Write-Warning "Assets manifest not found: $AssetsPath"
+        return
+    }
+    if (-not (Test-Path $ManuscriptPath)) {
+        Write-Warning "Manuscript not found: $ManuscriptPath"
+        return
+    }
+
+    # Normalize to absolute paths to avoid accidental relative-path mismatches
+    $AssetsPath = (Resolve-Path $AssetsPath).ProviderPath
+    $ManuscriptPath = (Resolve-Path $ManuscriptPath).ProviderPath
+    Write-Host "AssetsPath resolved:" $AssetsPath -ForegroundColor DarkCyan
+    Write-Host "ManuscriptPath resolved:" $ManuscriptPath -ForegroundColor DarkCyan
+
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    try {
+        $manifest = Get-Content -Raw -Path $AssetsPath -Encoding UTF8 | ConvertFrom-Json
+    } catch {
+        Write-Warning "Failed to read manifest: $_"
+        return
+    }
+
+    # Build normalized map: keys and values use forward slashes
+    $map = @{}
+    foreach ($e in $manifest.entries) {
+        $ref = ($e.reference -replace '^[./]+','' -replace '\\','/').Trim()
+        $outRel = ($e.outputRelativePath -replace '\\','/').Trim()
+        if (-not [string]::IsNullOrWhiteSpace($ref)) { $map[$ref] = $outRel }
+    }
+
+    Write-Host "Manifest entries:" $manifest.entries.Count -ForegroundColor Cyan
+    Write-Host "Map keys:" $map.Keys.Count -ForegroundColor Cyan
+    if ($map.Keys.Count -gt 0) {
+        Write-Host "Sample key:" ($map.Keys | Select-Object -First 1) -ForegroundColor Cyan
+        Write-Host "First 10 keys:" -ForegroundColor Cyan
+        $map.Keys | Select-Object -First 10 | ForEach-Object { Write-Host "  $_" -ForegroundColor Cyan }
+    }
+
+    $origText = Get-Content -Raw -Path $ManuscriptPath -Encoding UTF8
+    $origExamples = ([regex]::Matches($origText,'examples/').Count)
+    Write-Host "Original manuscript 'examples/' occurrences:" $origExamples -ForegroundColor Cyan
+    $logTs = (Get-Date).ToString('yyyyMMdd-HHmmss')
+    # Only create persistent debug/log artifacts when caller requested preserving temporary files.
+    if ($PreserveTemp) {
+        $logPath = "$ManuscriptPath.debug.links.$logTs.log"
+        Add-Content -Path $logPath -Value "==== Update-ManuscriptLinks run at $logTs ===="
+        Add-Content -Path $logPath -Value "Original manuscript 'examples/' occurrences: $origExamples"
+    } else {
+        $logPath = $null
+    }
+    $lines = $origText -split "`r?`n", [System.StringSplitOptions]::None
+    # 行数を出力する
+    Write-Host "Original manuscript lines:" $lines.Count -ForegroundColor Cyan
+
+    # 行ごとにに処理して、イメージリンクの場合パス変換をする。mapのキーが行内に存在する場合、置換対象とする。
+    $newLines = New-Object 'System.Collections.Generic.List[string]'
+    $replacedCount = 0
+    $fallbackCount = 0
+    $presentButNoMatchCount = 0
+    $linesModified = New-Object 'System.Collections.Generic.List[int]'
+    $lineNumber = 0
+    foreach ($line in $lines) {
+        $lineNumber++
+        $modifiedLine = $line
+
+        # 行内に画像ファイル拡張子が含まれていない場合、変換処理は実施しない
+        if ($line -notmatch '\.(png|jpg|jpeg|gif|bmp|svg)') {
+            $newLines.Add($line)
+            continue
+        }
+
+        Write-Host "[DEBUG] Line ${lineNumber}: $line" -ForegroundColor DarkYellow
+
+        $matchedAny = $false
+        foreach ($key in $map.Keys) {
+            Write-Host "[DEBUG] Line ${lineNumber}: checking key='$key', value='$($map[$key])'" -ForegroundColor DarkYellow
+            if ($line -match [regex]::Escape($key)) {
+                $replacementPath = ($map[$key] -replace '\\','/')
+                $replacement = 'images/' + $replacementPath
+                $modifiedLine = $modifiedLine -replace ([regex]::Escape($key)), ('images/' + [regex]::Escape($map[$key]))
+                $replacedCount++
+                $matchedAny = $true
+                Write-Host "[DEBUG] Line ${lineNumber}: matched key='$key' -> replacement='$replacement'" -ForegroundColor Magenta
+            } else {
+                # The manifest entry is present but the key was not found in the manuscript line. This could be a sign of a mismatch.
+                $presentButNoMatchCount++
+                if ($PreserveTemp) {
+                    Add-Content -Path $logPath -Value "Manifest key '$key' not found in line: $line"
+                }
+            }
+        }
+
+        if (-not $matchedAny) {
+            Write-Host "[DEBUG] Line ${lineNumber}: no manifest key matched for line" -ForegroundColor DarkYellow
+            Write-Host "  >> $line" -ForegroundColor DarkYellow
+        }
+
+        if ($modifiedLine -ne $line) {
+            $linesModified.Add($newLines.Count)
+            if ($logPath) { Add-Content -Path $logPath -Value "Modified line: Original: $line Modified: $modifiedLine" }
+            Write-Host "[DEBUG] Line ${lineNumber}: modified" -ForegroundColor Cyan
+            Write-Host "  Original: $line" -ForegroundColor Cyan
+            Write-Host "  Modified: $modifiedLine" -ForegroundColor Cyan
+        }
+        $newLines.Add($modifiedLine)
+    }
+
+    $ts = (Get-Date).ToString('yyyyMMdd-HHmmss')
+    # Create backup only when preserving temporary workspace/artifacts
+    if ($PreserveTemp) {
+        $backup = "$ManuscriptPath.bak.$ts"
+        Copy-Item -Path $ManuscriptPath -Destination $backup -Force
+    } else {
+        $backup = $null
+    }
+
+    # Write to a temp file first, validate content, then atomically move into place.
+    $tmpPath = "$ManuscriptPath.tmp.$ts"
+    [System.IO.File]::WriteAllText($tmpPath, ($newLines -join [Environment]::NewLine), $utf8NoBom)
+
+    try {
+        $written = Get-Content -Path $tmpPath -Raw -Encoding UTF8
+        $imagesFound = ([regex]::Matches($written, 'images/').Count)
+        Write-Host "Temp manuscript images count: $imagesFound (replaced=$replacedCount fallback=$fallbackCount present-but-unmatched=$presentButNoMatchCount lines-modified=$($linesModified.Count))" -ForegroundColor Cyan
+
+        # Optionally write debug artifacts for inspection when preserving temp workspace
+        if ($PreserveTemp) {
+            $debugNewPath = "$ManuscriptPath.debug.new.$ts.md"
+            Set-Content -Path $debugNewPath -Value $written -Encoding UTF8
+            Write-Host "Wrote debug manuscript file: $debugNewPath" -ForegroundColor Magenta
+
+            $countsPath = "$ManuscriptPath.debug.counts.$ts.txt"
+            $sb = New-Object System.Text.StringBuilder
+            foreach ($e in $manifest.entries) {
+                $ref = ($e.reference -replace '^[./]+','' -replace '\\','/').Trim()
+                $outRel = $e.outputRelativePath
+                $origCount = ([regex]::Matches($origText, [regex]::Escape($ref))).Count
+                $newCount = ([regex]::Matches($written, [regex]::Escape('images/' + $outRel))).Count
+                $line = "{0} | images/{1} | orig:{2} new:{3}" -f $ref, $outRel, $origCount, $newCount
+                [void]$sb.AppendLine($line)
+            }
+            Set-Content -Path $countsPath -Value $sb.ToString() -Encoding UTF8
+            Write-Host "Wrote debug counts file: $countsPath" -ForegroundColor Magenta
+        }
+
+        Move-Item -Path $tmpPath -Destination $ManuscriptPath -Force
+        Write-Host "Manuscript links updated: $ManuscriptPath" -ForegroundColor Green
+        if ($backup) { Write-Host "Backup: $backup" -ForegroundColor Yellow }
+    } catch {
+        Write-Warning "Failed to validate/write updated manuscript: $_"
+        if (Test-Path $tmpPath) { Remove-Item -Path $tmpPath -Force -ErrorAction SilentlyContinue }
+        return
+    }
+}
+
+Write-Host "Verifying SourceRoot and MetadataFile..." -ForegroundColor Cyan
 Ensure-Path -Path $SourceRoot -Label 'SourceRoot'
+Write-Host "SourceRoot verified: $SourceRoot" -ForegroundColor DarkCyan
 Ensure-Path -Path $MetadataFile -Label 'MetadataFile'
+Write-Host "MetadataFile verified: $MetadataFile" -ForegroundColor DarkCyan
 
 if ([string]::IsNullOrWhiteSpace($ProjectName)) {
     $ProjectName = Split-Path -Leaf (Resolve-Path $SourceRoot).ProviderPath
@@ -423,6 +630,9 @@ $chapterDirs = @(Get-ChildItem -Path $contentRoot -Directory |
     Where-Object { $_.Name -match $ChapterDirPattern } |
     Sort-Object Name)
 
+Write-Host "Content root resolved: $contentRoot" -ForegroundColor Cyan
+Write-Host "Found chapter directories: $($chapterDirs.Count)" -ForegroundColor DarkCyan
+
 $chapterFiles = @()
 foreach ($chapterDir in $chapterDirs) {
     $chapterFiles += @((Get-ChapterSectionFiles -ChapterRoot $chapterDir.FullName -FilePattern $ChapterFilePattern) |
@@ -432,12 +642,14 @@ foreach ($chapterDir in $chapterDirs) {
 if ($chapterFiles.Count -eq 0) {
     throw "No chapter markdown files found. pattern=$ChapterFilePattern contentRoot=$contentRoot"
 }
+Write-Host "Found chapter markdown files: $($chapterFiles.Count)" -ForegroundColor DarkCyan
 
 $skillRoot = Split-Path -Parent $PSScriptRoot
 $coverTemplateRoot = Join-Path $skillRoot 'assets\cover-templates'
 
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("ebook-step1-" + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
+Write-Host "Created temporary workspace: $tempRoot" -ForegroundColor Yellow
 
 try {
     $coverPath = Join-Path $contentRoot $CoverFile
@@ -463,27 +675,32 @@ try {
 
     $manuscriptLines = New-Object 'System.Collections.Generic.List[string]'
 
+    Write-Host "Cover template mode: $CoverTemplateMode; Cover file: $CoverFile" -ForegroundColor Cyan
+
     $leadPath = Resolve-OptionalFilePath -PrimaryRoot $contentRoot -FallbackRoot $resolvedSourceRoot -RelativePath $ManuscriptLeadFile
     $assetMap = New-Object 'System.Collections.Generic.Dictionary[string, string]' ([System.StringComparer]::OrdinalIgnoreCase)
     $assetManifest = New-Object 'System.Collections.Generic.List[object]'
 
     if ($leadPath) {
+        Write-Host "Appending lead file: $leadPath" -ForegroundColor Green
         Append-FileContent -Lines $manuscriptLines -Path $leadPath
         if ($CollectAssets) {
-            Add-AssetReferencesForFile -MarkdownPath $leadPath -SourceRootResolved $resolvedSourceRoot -AssetMap $assetMap -Manifest $assetManifest
+            Add-AssetReferencesForFile -MarkdownPath $leadPath -SourceRootResolved $resolvedSourceRoot -ContentRootResolved $contentRoot -AssetMap $assetMap -Manifest $assetManifest
         }
         $manuscriptLines.Add('')
     }
 
     if ((-not $SkipCoverInManuscript) -and (Test-Path $effectiveCoverPath)) {
+        Write-Host "Appending cover file: $effectiveCoverPath" -ForegroundColor Green
         Append-FileContent -Lines $manuscriptLines -Path $effectiveCoverPath
         if ($CollectAssets) {
-            Add-AssetReferencesForFile -MarkdownPath $effectiveCoverPath -SourceRootResolved $resolvedSourceRoot -AssetMap $assetMap -Manifest $assetManifest
+            Add-AssetReferencesForFile -MarkdownPath $effectiveCoverPath -SourceRootResolved $resolvedSourceRoot -ContentRootResolved $contentRoot -AssetMap $assetMap -Manifest $assetManifest
         }
         $manuscriptLines.Add('')
     }
 
     foreach ($chapterDir in $chapterDirs) {
+        Write-Host "Processing chapter directory: $($chapterDir.Name)" -ForegroundColor Cyan
         $chapterOrdinal = Get-OrdinalPrefixFromName -Name $chapterDir.Name -Kind 'chapter'
         $chapterTitle = if ($chapterTitleMap.ContainsKey($chapterDir.Name)) { [string]$chapterTitleMap[$chapterDir.Name] } else { '' }
         $sectionFiles = @(Get-ChapterSectionFiles -ChapterRoot $chapterDir.FullName -FilePattern $ChapterFilePattern)
@@ -501,6 +718,7 @@ try {
 
         for ($sectionIndex = 0; $sectionIndex -lt $sectionFiles.Count; $sectionIndex++) {
             $sectionFile = $sectionFiles[$sectionIndex]
+            Write-Host "  Appending section: $($sectionFile.File.FullName)" -ForegroundColor DarkCyan
             $sectionOrdinal = $sectionIndex + 1
             $headingState = @{
                 Counts = @(0, 0, 0, 0, 0, 0, 0)
@@ -511,7 +729,7 @@ try {
             $numberBaseLevel = if ([string]::IsNullOrWhiteSpace($chapterTitle)) { 1 } else { 2 }
             Append-FileContent -Lines $manuscriptLines -Path $sectionFile.File.FullName -NumberHeadings:$NumberHeadings -HeadingState $headingState -HeadingPrefix $headingPrefix -HeadingLevelOffset $headingLevelOffset -NumberBaseLevel $numberBaseLevel
             if ($CollectAssets) {
-                Add-AssetReferencesForFile -MarkdownPath $sectionFile.File.FullName -SourceRootResolved $resolvedSourceRoot -AssetMap $assetMap -Manifest $assetManifest
+                Add-AssetReferencesForFile -MarkdownPath $sectionFile.File.FullName -SourceRootResolved $resolvedSourceRoot -ContentRootResolved $contentRoot -AssetMap $assetMap -Manifest $assetManifest
             }
             $manuscriptLines.Add('')
         }
@@ -519,12 +737,17 @@ try {
 
     $manuscriptDest = Join-Path $OutputDir ("$ProjectName.manuscript.md")
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    Write-Host "Writing manuscript to: $manuscriptDest" -ForegroundColor Cyan
     [System.IO.File]::WriteAllText($manuscriptDest, ($manuscriptLines.ToArray() -join [Environment]::NewLine).TrimEnd() + [Environment]::NewLine, $utf8NoBom)
 
+    Write-Host "Manuscript written." -ForegroundColor Green
+
     if ($CollectAssets) {
+        Write-Host "Collecting and copying assets to $OutputDir/images ..." -ForegroundColor Cyan
         Copy-CollectedAssets -OutputDir $OutputDir -AssetMap $assetMap
 
-        $assetsManifestPath = Join-Path $OutputDir ("$ProjectName.assets.json")
+        # Write assets manifest into temporary workspace so it is removed by cleanup
+        $assetsManifestPath = Join-Path $tempRoot ("$ProjectName.assets.json")
         
         $missingCount = 0
         foreach ($entry in $assetManifest) {
@@ -545,15 +768,31 @@ try {
         
         [System.IO.File]::WriteAllText($assetsManifestPath, $manifestJson, $utf8NoBom)
 
+        if ($PreserveTemp) {
+            $finalAssetsPath = Join-Path $OutputDir ("$ProjectName.assets.json")
+            Move-Item -Path $assetsManifestPath -Destination $finalAssetsPath -Force
+            Write-Host "Assets manifest written: $finalAssetsPath" -ForegroundColor Green
+        } else {
+            Write-Host "Assets manifest created in temp workspace (will be removed): $assetsManifestPath" -ForegroundColor DarkCyan
+        }
+
         Write-Host "ASSETS: resolved=$($assetMap.Count), missing=$missingCount" -ForegroundColor Green
         Write-Host "OUTPUT: $(Join-Path $OutputDir 'images')" -ForegroundColor Green
         Write-Host "OUTPUT: $assetsManifestPath" -ForegroundColor Green
+        try {
+            Write-Host "Updating manuscript links to point to collected images..." -ForegroundColor Cyan
+            Update-ManuscriptLinks -AssetsPath $assetsManifestPath -ManuscriptPath $manuscriptDest
+            Write-Host "Manuscript links updated." -ForegroundColor Green
+        } catch {
+            Write-Warning "Update-ManuscriptLinks failed: $_"
+        }
     }
 
     # -----------------------------------------------------------------------
     # Optional: append samples catalog
     # -----------------------------------------------------------------------
     if (-not [string]::IsNullOrWhiteSpace($SamplesRoot) -and (Test-Path $SamplesRoot)) {
+        Write-Host "Generating samples catalog from: $SamplesRoot" -ForegroundColor Cyan
         $resolvedSamplesRoot = (Resolve-Path $SamplesRoot).ProviderPath
 
         $catalogLines = New-Object 'System.Collections.Generic.List[string]'

@@ -30,6 +30,40 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+function Print-ScriptInvocation {
+    param(
+        [string]$ScriptPath,
+        [hashtable]$ParamHash
+    )
+
+    Write-Host "Print-ScriptInvocation called with:" -ForegroundColor Cyan
+    if ($PSBoundParameters.Keys.Count -gt 0) {
+        foreach ($p in $PSBoundParameters.Keys) {
+            $val = $PSBoundParameters[$p]
+            if ($p -eq 'ParamHash' -and $val -is [hashtable]) {
+                Write-Host "  $p = Hashtable:"
+                foreach ($hk in $val.Keys) {
+                    $hv = $val[$hk]
+                    Write-Host "    $hk = $hv"
+                }
+            } else {
+                Write-Host "  $p = $val"
+            }
+        }
+    } else {
+        Write-Host "  (no parameters passed)"
+    }
+
+    Write-Host "Invoking script: $ScriptPath"
+    if ($null -ne $ParamHash -and $ParamHash.Keys.Count -gt 0) {
+        Write-Host "Arguments:"
+        foreach ($k in $ParamHash.Keys) {
+            $v = $ParamHash[$k]
+            Write-Host "  -$k $v"
+        }
+    }
+}
+
 function Resolve-ConfiguredPath {
     param(
         [string]$BasePath,
@@ -206,11 +240,21 @@ switch ($BuildStep) {
         if ($preserveTemp)          { $step1Params.PreserveTemp = $true }
         if ($samplesRoot)           { $step1Params.SamplesRoot = $samplesRoot }
 
+        Print-ScriptInvocation -ScriptPath $script -ParamHash $step1Params
         & pwsh -NoProfile -ExecutionPolicy Bypass -File $script @step1Params
         if ($LASTEXITCODE -ne 0) { throw "Step 1 failed with exit code $LASTEXITCODE" }
 
+        Write-Host "generateManuscriptReviewReportValue = $generateManuscriptReviewReportValue"
         if ($generateManuscriptReviewReportValue) {
+            Write-Host "Manuscript review report enabled — invoking review script..."
             $reviewScript = Join-Path $scriptsDir 'new-manuscript-review-report.ps1'
+            Write-Host "Invoking script: $reviewScript"
+            Write-Host "Arguments:"
+            Write-Host "  -RepoRoot    $RepoRoot"
+            Write-Host "  -ProjectName $projectName"
+            Write-Host "  -OutputDir   $outputDir"
+            Write-Host "  -Reviewer    $manuscriptReviewReviewer"
+            Write-Host "  -Decision    $manuscriptReviewDecision"
             & pwsh -NoProfile -ExecutionPolicy Bypass -File $reviewScript `
                 -RepoRoot    $RepoRoot `
                 -ProjectName $projectName `
@@ -218,6 +262,8 @@ switch ($BuildStep) {
                 -Reviewer    $manuscriptReviewReviewer `
                 -Decision    $manuscriptReviewDecision
             if ($LASTEXITCODE -ne 0) { throw "Manuscript review report generation failed with exit code $LASTEXITCODE" }
+        } else {
+            Write-Host "Manuscript review report generation skipped. (generateManuscriptReviewReportValue = $generateManuscriptReviewReportValue)"
         }
     }
 
@@ -225,6 +271,18 @@ switch ($BuildStep) {
         # INPUT : cover markdown / cover template, metadata.yaml
         # OUTPUT: $outputDir/cover.pdf, $outputDir/cover.jpg
         $script = Join-Path $scriptsDir 'invoke-ebook-step2-cover.ps1'
+        Write-Host "Invoking script: $script"
+        Write-Host "Arguments:"
+        Write-Host "  -SourceRoot        $sourceRoot"
+        Write-Host "  -OutputDir         $outputDir"
+        Write-Host "  -ProjectName       $projectName"
+        Write-Host "  -MetadataFile      $metadataFile"
+        Write-Host "  -KindleTemplateDir $scriptsDir"
+        Write-Host "  -StyleFile         $styleFile"
+        Write-Host "  -CoverStyleFile    $coverStyleFile"
+        Write-Host "  -CoverFile         $coverFile"
+        Write-Host "  -CoverTemplateMode $coverTemplateMode"
+        Write-Host "  -CoverTemplate     $coverTemplate"
         & pwsh -NoProfile -ExecutionPolicy Bypass -File $script `
             -SourceRoot        $sourceRoot `
             -OutputDir         $outputDir `
@@ -264,6 +322,7 @@ switch ($BuildStep) {
         if ($mermaidConfigFile)          { $step3Params.MermaidConfigFile          = $mermaidConfigFile }
         if ($mermaidPuppeteerConfigFile) { $step3Params.MermaidPuppeteerConfigFile = $mermaidPuppeteerConfigFile }
         if ($preserveTemp)               { $step3Params.PreserveTemp               = $true }
+        Print-ScriptInvocation -ScriptPath $script -ParamHash $step3Params
         & $script @step3Params
         if ($LASTEXITCODE -ne 0) { throw "Step 3 failed with exit code $LASTEXITCODE" }
     }

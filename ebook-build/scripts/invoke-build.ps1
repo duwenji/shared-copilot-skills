@@ -137,6 +137,7 @@ $mermaidPuppeteerConfigFileValue   = Get-ConfigValue -Config $config -Name 'merm
 $generateManuscriptReviewReportValue = Get-ConfigValue -Config $config -Name 'generateManuscriptReviewReport'
 $manuscriptReviewReviewerValue     = Get-ConfigValue -Config $config -Name 'manuscriptReviewReviewer'
 $manuscriptReviewDecisionValue     = Get-ConfigValue -Config $config -Name 'manuscriptReviewDecision'
+$normalizeManuscriptValue          = Get-ConfigValue -Config $config -Name 'normalizeManuscript'
 $headingNumberingValue             = Get-ConfigValue -Config $config -Name 'headingNumbering'
 $tocDepthValue                     = Get-ConfigValue -Config $config -Name 'tocDepth'
 $samplesRootValue                  = Get-ConfigValue -Config $config -Name 'samplesRoot'
@@ -192,6 +193,7 @@ $requireManuscriptApproval  = [bool]$(if ($null -ne $requireManuscriptApprovalVa
 $approvalTokenFile          = Resolve-ConfiguredPath -BasePath $RepoRoot -Value $approvalTokenFileValue
 $manuscriptReviewReviewer   = [string]$(if ($manuscriptReviewReviewerValue)           { $manuscriptReviewReviewerValue }   else { 'automated-baseline' })
 $manuscriptReviewDecision   = [string]$(if ($manuscriptReviewDecisionValue)           { $manuscriptReviewDecisionValue }   else { 'Approve' })
+$normalizeManuscript        = [bool]$(if ($null -ne $normalizeManuscriptValue)        { $normalizeManuscriptValue }        else { $false })
 $headingNumbering           = [bool]$(if ($null -ne $headingNumberingValue)           { $headingNumberingValue }           else { $false })
 $tocDepth = if ($null -ne $tocDepthValue) { [int]$tocDepthValue } else { 0 }
 $samplesRoot   = Resolve-ConfiguredPath -BasePath $RepoRoot -Value $samplesRootValue
@@ -243,6 +245,24 @@ switch ($BuildStep) {
         Print-ScriptInvocation -ScriptPath $script -ParamHash $step1Params
         & pwsh -NoProfile -ExecutionPolicy Bypass -File $script @step1Params
         if ($LASTEXITCODE -ne 0) { throw "Step 1 failed with exit code $LASTEXITCODE" }
+
+        if ($normalizeManuscript) {
+            $manuscriptPath = Join-Path $outputDir ("$projectName.manuscript.md")
+            $normalizeScript = Join-Path $scriptsDir 'normalize-manuscript.ps1'
+
+            if (-not (Test-Path $normalizeScript -PathType Leaf)) {
+                throw "Normalization script not found: $normalizeScript"
+            }
+            if (-not (Test-Path $manuscriptPath -PathType Leaf)) {
+                throw "Manuscript not found for normalization: $manuscriptPath"
+            }
+
+            Write-Host "Post-processing manuscript: $manuscriptPath"
+            & $normalizeScript -ManuscriptPath $manuscriptPath
+            if ($LASTEXITCODE -ne 0) {
+                throw "Manuscript normalization failed with exit code $LASTEXITCODE"
+            }
+        }
 
         Write-Host "generateManuscriptReviewReportValue = $generateManuscriptReviewReportValue"
         if ($generateManuscriptReviewReportValue) {

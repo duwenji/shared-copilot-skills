@@ -39,6 +39,7 @@ Copilot Agent から再利用できるように、非対話・契約駆動で実
 | coverFile | No | 00-COVER.md | 表紙 Markdown ファイル名 |
 | coverTemplateMode | No | auto | `auto`, `file`, `template` |
 | coverTemplate | No | classic | shared 側テンプレート名 |
+| normalizeManuscript | No | false | step1 後に共有正規化フックを実行 |
 | requireManuscriptApproval | No | false | `BuildStep=step3` 実行時に承認トークン必須化 |
 | approvalTokenFile | No | outputDir/project-name.manuscript.approved | 承認トークンファイル |
 | preserveTemp | No | false | 一時ディレクトリ保持 |

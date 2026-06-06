@@ -209,6 +209,38 @@ $collectAssets = if ($null -ne $collectAssetsValue) {
 }
 $preserveTemp  = [bool]$(if ($null -ne $preserveTempValue) { $preserveTempValue } else { $false })
 
+Write-Host "Resolved configuration values:" -ForegroundColor Green
+Write-Host "  projectName: $projectName"
+Write-Host "  sourceRoot: $sourceRoot"
+Write-Host "  outputDir: $outputDir"
+Write-Host "  metadataFile: $metadataFile"    
+Write-Host "  kdpMetadataFile: $kdpMetadataFile"
+Write-Host "  styleFile: $styleFile"
+Write-Host "  coverStyleFile: $coverStyleFile"
+Write-Host "  formats: $($formats -join ', ')"
+Write-Host "  chapterDirPattern: $chapterDirPattern"
+Write-Host "  chapterFilePattern: $chapterFilePattern"
+Write-Host "  coverFile: $coverFile"
+Write-Host "  manuscriptLeadFile: $manuscriptLeadFile"
+Write-Host "  skipCoverInManuscript: $skipCoverInManuscript"
+Write-Host "  coverTemplateMode: $coverTemplateMode"
+Write-Host "  coverTemplate: $coverTemplate"
+Write-Host "  mermaidMode: $mermaidMode"
+Write-Host "  mermaidFormat: $mermaidFormat"
+Write-Host "  failOnMermaidError: $failOnMermaidError"
+Write-Host "  mermaidConfigFile: $mermaidConfigFile"
+Write-Host "  mermaidPuppeteerConfigFile: $mermaidPuppeteerConfigFile"
+Write-Host "  requireManuscriptApproval: $requireManuscriptApproval"
+Write-Host "  approvalTokenFile: $approvalTokenFile"
+Write-Host "  generateManuscriptReviewReport: $generateManuscriptReviewReportValue"
+Write-Host "  manuscriptReviewReviewer: $manuscriptReviewReviewer"
+Write-Host "  manuscriptReviewDecision: $manuscriptReviewDecision"
+Write-Host "  normalizeManuscript: $normalizeManuscript"
+Write-Host "  headingNumbering: $headingNumbering"
+Write-Host "  tocDepth: $tocDepth"
+Write-Host "  samplesRoot: $samplesRoot"
+Write-Host "  samplesTitle: $samplesTitle"
+
 # ---------------------------------------------------------------------------
 # Dispatch to the appropriate step script
 # ---------------------------------------------------------------------------

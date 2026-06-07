@@ -288,13 +288,6 @@ function Get-NormalizedAssetReference {
         $normalized = $normalized.Substring(2)
     }
 
-    # Trim '../' segments: resolve relative references so the reference is usable
-    # by the later asset-copy step. The caller (Add-AssetReferencesForFile) will
-    # also compute a clean outputRelativePath after resolving the markdown base dir.
-    while ($normalized.StartsWith('../')) {
-        $normalized = $normalized.Substring(3)
-    }
-
     if ([string]::IsNullOrWhiteSpace($normalized)) { return $null }
     if ($normalized.StartsWith('#')) { return $null }
     if ($normalized -match '^(?i)(https?|data|mailto):') { return $null }
@@ -373,12 +366,16 @@ function Add-AssetReferencesForFile {
             $category = ''
         }
 
-        # Build output relative path using category (if present). Do NOT include a top-level 'images/' prefix here;
-        # Copy-CollectedAssets will decide where to place the file on disk.
-        if (-not [string]::IsNullOrWhiteSpace($category)) {
+        # Compute output relative path directly from the resolved file path relative to content root
+        try {
+            $outputRel = [System.IO.Path]::GetRelativePath($ContentRootResolved, $resolvedCandidate).Replace('\', '/')
+        } catch {
             $outputRel = "$category/$relativeBase$reference"
-        } else {
-            $outputRel = "$relativeBase$reference"
+        }
+        # Strip leading 'images/' so Copy-CollectedAssets places files at ebook-output/images/<rest>
+        # Update-ManuscriptLinks will prepend 'images/' back when rewriting manuscript links
+        if ($outputRel -match '^images/') {
+            $outputRel = $outputRel.Substring(7)
         }
 
         $manifestEntry = [ordered]@{

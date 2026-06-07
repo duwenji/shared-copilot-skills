@@ -288,11 +288,17 @@ function Get-NormalizedAssetReference {
         $normalized = $normalized.Substring(2)
     }
 
+    # Trim '../' segments: resolve relative references so the reference is usable
+    # by the later asset-copy step. The caller (Add-AssetReferencesForFile) will
+    # also compute a clean outputRelativePath after resolving the markdown base dir.
+    while ($normalized.StartsWith('../')) {
+        $normalized = $normalized.Substring(3)
+    }
+
     if ([string]::IsNullOrWhiteSpace($normalized)) { return $null }
     if ($normalized.StartsWith('#')) { return $null }
     if ($normalized -match '^(?i)(https?|data|mailto):') { return $null }
     if ([System.IO.Path]::IsPathRooted($normalized)) { return $null }
-    if ($normalized -like '../*') { return $null }
 
     return $normalized
 }

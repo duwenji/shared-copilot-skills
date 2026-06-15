@@ -144,6 +144,10 @@ $samplesRootValue                  = Get-ConfigValue -Config $config -Name 'samp
 $samplesTitleValue                 = Get-ConfigValue -Config $config -Name 'samplesTitle'
 $collectAssetsValue               = Get-ConfigValue -Config $config -Name 'collectAssets'
 $preserveTempValue                 = Get-ConfigValue -Config $config -Name 'preserveTemp'
+$coverModeValue                    = Get-ConfigValue -Config $config -Name 'coverMode'
+$coverImageProviderValue           = Get-ConfigValue -Config $config -Name 'coverImageProvider'
+$coverImageSizeValue               = Get-ConfigValue -Config $config -Name 'coverImageSize'
+$coverImagePromptFileValue         = Get-ConfigValue -Config $config -Name 'coverImagePromptFile'
 
 # ---------------------------------------------------------------------------
 # Resolve effective values (config → sensible defaults)
@@ -207,7 +211,11 @@ $collectAssets = if ($null -ne $collectAssetsValue) {
 } else { 
     $false 
 }
-$preserveTemp  = [bool]$(if ($null -ne $preserveTempValue) { $preserveTempValue } else { $false })
+$preserveTemp         = [bool]$(if ($null -ne $preserveTempValue) { $preserveTempValue } else { $false })
+$coverMode            = [string]$(if ($coverModeValue)            { $coverModeValue }            else { 'markdown' })
+$coverImageProvider   = [string]$(if ($coverImageProviderValue)   { $coverImageProviderValue }   else { 'openai' })
+$coverImageSize       = [string]$(if ($coverImageSizeValue)       { $coverImageSizeValue }       else { '1600x2560' })
+$coverImagePromptFile = Resolve-ConfiguredPath -BasePath $RepoRoot -Value $coverImagePromptFileValue
 
 Write-Host "Resolved configuration values:" -ForegroundColor Green
 Write-Host "  projectName: $projectName"
@@ -240,6 +248,10 @@ Write-Host "  headingNumbering: $headingNumbering"
 Write-Host "  tocDepth: $tocDepth"
 Write-Host "  samplesRoot: $samplesRoot"
 Write-Host "  samplesTitle: $samplesTitle"
+Write-Host "  coverMode: $coverMode"
+Write-Host "  coverImageProvider: $coverImageProvider"
+Write-Host "  coverImageSize: $coverImageSize"
+Write-Host "  coverImagePromptFile: $coverImagePromptFile"
 
 # ---------------------------------------------------------------------------
 # Dispatch to the appropriate step script
@@ -320,11 +332,13 @@ switch ($BuildStep) {
     }
 
     'step2' {
-        # INPUT : cover markdown / cover template, metadata.yaml
-        # OUTPUT: $outputDir/cover.pdf, $outputDir/cover.jpg
+        # INPUT : cover source (markdown or AI prompt), metadata.yaml
+        # OUTPUT: $outputDir/cover.png + cover.pdf  (ai-image mode)
+        #         $outputDir/cover.jpg + cover.pdf  (markdown mode)
         $script = Join-Path $scriptsDir 'invoke-ebook-step2-cover.ps1'
         Write-Host "Invoking script: $script"
         Write-Host "Arguments:"
+        Write-Host "  -RepoRoot          $RepoRoot"
         Write-Host "  -SourceRoot        $sourceRoot"
         Write-Host "  -OutputDir         $outputDir"
         Write-Host "  -ProjectName       $projectName"
@@ -335,17 +349,30 @@ switch ($BuildStep) {
         Write-Host "  -CoverFile         $coverFile"
         Write-Host "  -CoverTemplateMode $coverTemplateMode"
         Write-Host "  -CoverTemplate     $coverTemplate"
-        & pwsh -NoProfile -ExecutionPolicy Bypass -File $script `
-            -SourceRoot        $sourceRoot `
-            -OutputDir         $outputDir `
-            -ProjectName       $projectName `
-            -MetadataFile      $metadataFile `
-            -KindleTemplateDir $scriptsDir `
-            -StyleFile         $styleFile `
-            -CoverStyleFile    $coverStyleFile `
-            -CoverFile         $coverFile `
-            -CoverTemplateMode $coverTemplateMode `
-            -CoverTemplate     $coverTemplate
+        Write-Host "  -CoverMode         $coverMode"
+        Write-Host "  -CoverImageProvider   $coverImageProvider"
+        Write-Host "  -CoverImageSize       $coverImageSize"
+        Write-Host "  -CoverImagePromptFile $coverImagePromptFile"
+
+        $step2Params = @{
+            RepoRoot          = $RepoRoot
+            SourceRoot        = $sourceRoot
+            OutputDir         = $outputDir
+            ProjectName       = $projectName
+            MetadataFile      = $metadataFile
+            KindleTemplateDir = $scriptsDir
+            StyleFile         = $styleFile
+            CoverStyleFile    = $coverStyleFile
+            CoverFile         = $coverFile
+            CoverTemplateMode = $coverTemplateMode
+            CoverTemplate     = $coverTemplate
+            CoverMode         = $coverMode
+            CoverImageProvider   = $coverImageProvider
+            CoverImageSize       = $coverImageSize
+        }
+        if ($coverImagePromptFile) { $step2Params.CoverImagePromptFile = $coverImagePromptFile }
+
+        & pwsh -NoProfile -ExecutionPolicy Bypass -File $script @step2Params
         if ($LASTEXITCODE -ne 0) { throw "Step 2 failed with exit code $LASTEXITCODE" }
     }
 

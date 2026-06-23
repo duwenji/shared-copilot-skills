@@ -290,6 +290,24 @@ switch ($BuildStep) {
         & pwsh -NoProfile -ExecutionPolicy Bypass -File $script @step1Params
         if ($LASTEXITCODE -ne 0) { throw "Step 1 failed with exit code $LASTEXITCODE" }
 
+        # Auto-generate cover image prompt from manuscript + metadata (only when coverMode=ai-image,
+        # a prompt file path is configured, and the file does not already exist).
+        if ($coverMode -eq 'ai-image' -and -not [string]::IsNullOrWhiteSpace($coverImagePromptFile)) {
+            $manuscriptPath   = Join-Path $outputDir "$projectName.manuscript.md"
+            $genPromptScript  = Join-Path $scriptsDir 'invoke-generate-cover-prompt.ps1'
+            if (Test-Path $genPromptScript) {
+                Write-Host "Auto-generating cover image prompt (if not already present)..." -ForegroundColor Cyan
+                & pwsh -NoProfile -ExecutionPolicy Bypass -File $genPromptScript `
+                    -ManuscriptFile       $manuscriptPath `
+                    -MetadataFile         $metadataFile `
+                    -CoverImagePromptFile $coverImagePromptFile `
+                    -ProjectName          $projectName
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Warning "Cover prompt generation exited with code $LASTEXITCODE (non-fatal, continuing)"
+                }
+            }
+        }
+
         if ($normalizeManuscript) {
             $manuscriptPath = Join-Path $outputDir ("$projectName.manuscript.md")
             $normalizeScript = Join-Path $scriptsDir 'normalize-manuscript.ps1'

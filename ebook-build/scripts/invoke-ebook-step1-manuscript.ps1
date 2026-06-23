@@ -822,7 +822,7 @@ try {
             $depth = @($relativeDirectory -split '/').Count
             $headingLevel = [Math]::Min(6, 1 + $depth)
             Write-Host "  [DIR] H$headingLevel $relativeDirectory" -ForegroundColor Cyan
-            $catalogLines.Add((('#' * $headingLevel) +  + $relativeDirectory))
+            $catalogLines.Add(('#' * $headingLevel) + ' ' + $relativeDirectory)
             $catalogLines.Add('')
 
             $directoryFiles = @($allSampleFiles |

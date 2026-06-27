@@ -99,6 +99,21 @@ function Get-ConfigValue {
     $property.Value
 }
 
+function Test-StepUpToDate {
+    param(
+        [string[]]$Inputs,
+        [string[]]$Outputs
+    )
+    foreach ($out in $Outputs) {
+        if (-not (Test-Path $out)) { return $false }
+    }
+    $oldestOutput = ($Outputs | ForEach-Object { (Get-Item $_).LastWriteTimeUtc } | Sort-Object)[0]
+    $existingInputTimes = $Inputs | Where-Object { Test-Path $_ } | ForEach-Object { (Get-Item $_).LastWriteTimeUtc }
+    if (-not $existingInputTimes) { return $false }
+    $newestInput = ($existingInputTimes | Sort-Object -Descending)[0]
+    return $oldestOutput -gt $newestInput
+}
+
 # ---------------------------------------------------------------------------
 # Resolve paths
 # ---------------------------------------------------------------------------

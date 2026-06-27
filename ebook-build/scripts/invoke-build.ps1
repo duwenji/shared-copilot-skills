@@ -24,7 +24,9 @@ param(
 
     [Parameter(Mandatory = $true)]
     [ValidateSet('step1', 'step2', 'step3')]
-    [string]$BuildStep
+    [string]$BuildStep,
+
+    [switch]$Force
 )
 
 Set-StrictMode -Version Latest
@@ -368,6 +370,27 @@ switch ($BuildStep) {
         # INPUT : cover source (markdown or AI prompt), metadata.yaml
         # OUTPUT: $outputDir/cover.png + cover.pdf  (ai-image mode)
         #         $outputDir/cover.jpg + cover.pdf  (markdown mode)
+
+        # --- up-to-date check ---
+        $step2Inputs = @($metadataFile, $coverStyleFile)
+        if ($coverMode -eq 'ai-image' -and $coverImagePromptFile) {
+            $step2Inputs += $coverImagePromptFile
+        } else {
+            $step2Inputs += (Join-Path $sourceRoot $coverFile)
+        }
+
+        $coverPng = Join-Path $outputDir 'cover.png'
+        $coverJpg = Join-Path $outputDir 'cover.jpg'
+        $coverPdf = Join-Path $outputDir 'cover.pdf'
+        $existingCover = if (Test-Path $coverPng) { $coverPng } else { $coverJpg }
+        $step2Outputs = @($coverPdf, $existingCover)
+
+        if (-not $Force -and (Test-StepUpToDate -Inputs $step2Inputs -Outputs $step2Outputs)) {
+            Write-Host "[step2] cover files are up-to-date — skipping (use -Force to rebuild)" -ForegroundColor Yellow
+            break
+        }
+        # --- end up-to-date check ---
+
         $script = Join-Path $scriptsDir 'invoke-ebook-step2-cover.ps1'
         Write-Host "Invoking script: $script"
         Write-Host "Arguments:"

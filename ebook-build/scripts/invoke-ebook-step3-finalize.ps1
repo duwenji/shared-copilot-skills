@@ -507,7 +507,11 @@ function New-KdpPackageMarkdown {
     $metadata = Merge-Maps -BaseMap $baseMetadata -OverrideMap $kdpMetadata
 
     $title = Get-StringValue -Map $metadata -Keys @('title') -Default $ProjectName
+    $titlePronunciation = Get-StringValue -Map $metadata -Keys @('titlePronunciation') -Default ''
+    $romanizedTitle = Get-StringValue -Map $metadata -Keys @('romanizedTitle') -Default ''
     $subtitle = Get-StringValue -Map $metadata -Keys @('subtitle') -Default 'TBD'
+    $subtitlePronunciation = Get-StringValue -Map $metadata -Keys @('subtitlePronunciation') -Default ''
+    $romanizedSubtitle = Get-StringValue -Map $metadata -Keys @('romanizedSubtitle') -Default ''
     $creator = Get-StringValue -Map $metadata -Keys @('creator', 'author') -Default 'TBD'
     $language = Get-StringValue -Map $metadata -Keys @('language') -Default 'ja-JP'
     $publisher = Get-StringValue -Map $metadata -Keys @('publisher') -Default 'Self Published'
@@ -544,7 +548,11 @@ function New-KdpPackageMarkdown {
 | Field | Value |
 |---|---|
 | Title | $title |
+| Title Pronunciation | $(if ($titlePronunciation) { $titlePronunciation } else { '—' }) |
+| Romanized Title | $(if ($romanizedTitle) { $romanizedTitle } else { '—' }) |
 | Subtitle | $subtitle |
+| Subtitle Pronunciation | $(if ($subtitlePronunciation) { $subtitlePronunciation } else { '—' }) |
+| Romanized Subtitle | $(if ($romanizedSubtitle) { $romanizedSubtitle } else { '—' }) |
 | Author | $creator |
 | Language | $language |
 | Publisher | $publisher |

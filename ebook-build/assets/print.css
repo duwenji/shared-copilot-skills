@@ -1,6 +1,6 @@
 @page {
   size: 6in 9in;
-  margin: 0.55in 0.55in 0.65in 0.55in;
+  margin: 0.625in 0.5in 0.65in 0.5in;
 }
 
 html {
@@ -12,6 +12,11 @@ body {
   background: #ffffff;
   font-family: "Yu Gothic UI", "Meiryo", "Hiragino Sans", "Noto Sans CJK JP", sans-serif;
   line-height: 1.7;
+}
+
+/* Never print URLs after links — long href values overflow margins and fail KDP layout check */
+a::after {
+  content: none !important;
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -75,6 +80,8 @@ code {
 pre {
   white-space: pre-wrap;
   word-break: break-word;
+  overflow-wrap: break-word;
+  overflow-x: hidden;
   border-radius: 8px;
   background: #f8fafc;
   color: #1f2937;
@@ -106,6 +113,13 @@ figure {
 
 table {
   border-collapse: collapse;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+table th, table td {
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 table th {

@@ -22,6 +22,8 @@ param(
     [string]$CoverImageProvider   = 'openai',
     [string]$CoverImageSize       = '1600x2560',
     [string]$CoverImagePromptFile = '',
+    [ValidateSet('png', 'jpg', 'jpeg')]
+    [string]$CoverImageFormat     = 'jpg',
     [switch]$PreserveTemp
 )
 
@@ -196,7 +198,8 @@ if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
 
 if ($CoverMode -eq 'ai-image') {
 
-    $coverPng = Join-Path $OutputDir 'cover.png'
+    $coverExt = if ($CoverImageFormat -eq 'jpg' -or $CoverImageFormat -eq 'jpeg') { 'jpg' } else { 'png' }
+    $coverPng = Join-Path $OutputDir "cover.$coverExt"
     $coverPdf = Join-Path $OutputDir 'cover.pdf'
 
     # Validate API key for known providers
@@ -269,9 +272,9 @@ if ($CoverMode -eq 'ai-image') {
     } else {
         & npx '-y' 'bun' $mainTs @imgArgs
     }
-    if ($LASTEXITCODE -ne 0) { throw "cover.png generation failed (exit $LASTEXITCODE)" }
+    if ($LASTEXITCODE -ne 0) { throw "cover.$coverExt generation failed (exit $LASTEXITCODE)" }
 
-    Write-Host "`n=== Step 2 (ai-image): Convert PNG -> PDF ===" -ForegroundColor Cyan
+    Write-Host "`n=== Step 2 (ai-image): Convert $($coverExt.ToUpper()) -> PDF ===" -ForegroundColor Cyan
     Write-Host "  Output   : $coverPdf"
 
     $scriptsDir      = $PSScriptRoot

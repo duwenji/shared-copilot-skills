@@ -165,6 +165,8 @@ $coverModeValue                    = Get-ConfigValue -Config $config -Name 'cove
 $coverImageProviderValue           = Get-ConfigValue -Config $config -Name 'coverImageProvider'
 $coverImageSizeValue               = Get-ConfigValue -Config $config -Name 'coverImageSize'
 $coverImagePromptFileValue         = Get-ConfigValue -Config $config -Name 'coverImagePromptFile'
+$coverImagePromptSourceFileValue   = Get-ConfigValue -Config $config -Name 'coverImagePromptSourceFile'
+$coverImageFormatValue             = Get-ConfigValue -Config $config -Name 'coverImageFormat'
 
 # ---------------------------------------------------------------------------
 # Resolve effective values (config → sensible defaults)
@@ -232,7 +234,9 @@ $preserveTemp         = [bool]$(if ($null -ne $preserveTempValue) { $preserveTem
 $coverMode            = [string]$(if ($coverModeValue)            { $coverModeValue }            else { 'markdown' })
 $coverImageProvider   = [string]$(if ($coverImageProviderValue)   { $coverImageProviderValue }   else { 'openai' })
 $coverImageSize       = [string]$(if ($coverImageSizeValue)       { $coverImageSizeValue }       else { '1600x2560' })
-$coverImagePromptFile = Resolve-ConfiguredPath -BasePath $RepoRoot -Value $coverImagePromptFileValue
+$coverImagePromptFile       = Resolve-ConfiguredPath -BasePath $RepoRoot -Value $coverImagePromptFileValue
+$coverImagePromptSourceFile = Resolve-ConfiguredPath -BasePath $RepoRoot -Value $coverImagePromptSourceFileValue
+$coverImageFormat           = [string]$(if ($coverImageFormatValue) { $coverImageFormatValue } else { 'jpg' })
 
 Write-Host "Resolved configuration values:" -ForegroundColor Green
 Write-Host "  projectName: $projectName"
@@ -269,6 +273,7 @@ Write-Host "  coverMode: $coverMode"
 Write-Host "  coverImageProvider: $coverImageProvider"
 Write-Host "  coverImageSize: $coverImageSize"
 Write-Host "  coverImagePromptFile: $coverImagePromptFile"
+Write-Host "  coverImageFormat: $coverImageFormat"
 
 # ---------------------------------------------------------------------------
 # Dispatch to the appropriate step script
@@ -306,6 +311,19 @@ switch ($BuildStep) {
         Print-ScriptInvocation -ScriptPath $script -ParamHash $step1Params
         & pwsh -NoProfile -ExecutionPolicy Bypass -File $script @step1Params
         if ($LASTEXITCODE -ne 0) { throw "Step 1 failed with exit code $LASTEXITCODE" }
+
+        # Copy hand-crafted prompt source file to the effective prompt location (if configured and exists).
+        if ($coverMode -eq 'ai-image' `
+                -and -not [string]::IsNullOrWhiteSpace($coverImagePromptSourceFile) `
+                -and (Test-Path $coverImagePromptSourceFile) `
+                -and -not [string]::IsNullOrWhiteSpace($coverImagePromptFile)) {
+            $promptDir = Split-Path -Parent $coverImagePromptFile
+            if (-not [string]::IsNullOrWhiteSpace($promptDir) -and -not (Test-Path $promptDir)) {
+                New-Item -ItemType Directory -Path $promptDir -Force | Out-Null
+            }
+            Copy-Item -Path $coverImagePromptSourceFile -Destination $coverImagePromptFile -Force
+            Write-Host "Copied cover prompt: $coverImagePromptSourceFile -> $coverImagePromptFile" -ForegroundColor Cyan
+        }
 
         # Auto-generate cover image prompt from manuscript + metadata (only when coverMode=ai-image,
         # a prompt file path is configured, and the file does not already exist).
@@ -409,6 +427,7 @@ switch ($BuildStep) {
         Write-Host "  -CoverImageProvider   $coverImageProvider"
         Write-Host "  -CoverImageSize       $coverImageSize"
         Write-Host "  -CoverImagePromptFile $coverImagePromptFile"
+        Write-Host "  -CoverImageFormat     $coverImageFormat"
 
         $step2Params = @{
             RepoRoot          = $RepoRoot
@@ -427,6 +446,7 @@ switch ($BuildStep) {
             CoverImageSize       = $coverImageSize
         }
         if ($coverImagePromptFile) { $step2Params.CoverImagePromptFile = $coverImagePromptFile }
+        $step2Params.CoverImageFormat = $coverImageFormat
 
         & pwsh -NoProfile -ExecutionPolicy Bypass -File $script @step2Params
         if ($LASTEXITCODE -ne 0) { throw "Step 2 failed with exit code $LASTEXITCODE" }

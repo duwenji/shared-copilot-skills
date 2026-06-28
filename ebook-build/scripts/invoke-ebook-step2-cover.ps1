@@ -140,6 +140,57 @@ function Get-BrowserExecutable {
     throw 'No browser executable found for headless render (Edge/Chrome required).'
 }
 
+function Resolve-PythonExecutable {
+    $candidates = @(
+        $env:PYTHON,
+        $env:PYTHON_EXE,
+        (Get-Command python -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1),
+        (Get-Command python3 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1),
+        'C:\Python314\python.exe',
+        'C:\Python311\python.exe',
+        'C:\Python310\python.exe'
+    )
+
+    foreach ($candidate in $candidates) {
+        if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+        if (Test-Path $candidate) { return $candidate }
+    }
+
+    throw 'Python is required to normalize cover images to RGB JPEG.'
+}
+
+function Convert-ImageToRgbJpg {
+    param([string]$Path)
+
+    if (-not (Test-Path $Path)) {
+        throw "Image file not found: $Path"
+    }
+
+    $pythonExe = Resolve-PythonExecutable
+    $script = @'
+import importlib.util
+import subprocess
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+if importlib.util.find_spec("PIL") is None:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "--quiet", "pillow"])
+
+from PIL import Image
+
+with Image.open(path) as img:
+    if img.mode != "RGB":
+        img = img.convert("RGB")
+    img.save(path, format="JPEG", quality=95, subsampling=0)
+'@
+
+    & $pythonExe -c $script $Path
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to normalize image to RGB JPEG: $Path"
+    }
+}
+
 function Invoke-HeadlessBrowser {
     param(
         [string]$Browser,
@@ -290,6 +341,10 @@ if ($CoverMode -eq 'ai-image') {
     & node $pngToPdfScript $coverPng $coverPdf
     if ($LASTEXITCODE -ne 0) { throw "PNG->PDF conversion failed (exit $LASTEXITCODE)" }
 
+    if ($coverExt -eq 'jpg') {
+        Convert-ImageToRgbJpg -Path $coverPng
+    }
+
     Write-Host "`nOUTPUT: $coverPng" -ForegroundColor Green
     Write-Host "OUTPUT: $coverPdf"   -ForegroundColor Green
     Write-Host 'Step 2 complete. Run Step 3 to finalize the ebook.' -ForegroundColor Green
@@ -381,6 +436,8 @@ if ($CoverMode -eq 'ai-image') {
             '--default-background-color=ffffff', '--window-size=1600,2400',
             "--screenshot=$coverJpg", $coverUrl
         )
+
+        Convert-ImageToRgbJpg -Path $coverJpg
 
         Invoke-HeadlessBrowser -Browser $browser -ExpectedOutput $coverPdf -Arguments @(
             '--headless=new', '--disable-gpu', '--allow-file-access-from-files',

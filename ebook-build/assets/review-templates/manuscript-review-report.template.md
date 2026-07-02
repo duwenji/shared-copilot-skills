@@ -19,7 +19,6 @@
 - ./ebook-output/{{projectName}}.epub: {{epubArtifactStatus}}
 - ./ebook-output/{{projectName}}.pdf: {{pdfArtifactStatus}}
 - ./ebook-output/{{projectName}}-kdp-registration.md: {{kdpArtifactStatus}}
-- ./ebook-output/cover.pdf: {{coverPdfStatus}}
 - ./ebook-output/cover.jpg: {{coverJpgStatus}}
 
 ## Findings

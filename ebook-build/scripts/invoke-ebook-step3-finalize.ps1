@@ -599,14 +599,12 @@ $($artifacts.ToArray() -join [Environment]::NewLine)
 $manuscriptInputPath = Join-Path $OutputDir ("$ProjectName.manuscript.md")
 $coverJpgInputPath = Join-Path $OutputDir 'cover.jpg'
 $coverPngInputPath = Join-Path $OutputDir 'cover.png'
-$coverPdfInputPath = Join-Path $OutputDir 'cover.pdf'
 
 Ensure-Path -Path $manuscriptInputPath -Label "Step 1 output - $ProjectName.manuscript.md"
 if (-not (Test-Path $coverJpgInputPath) -and (Test-Path $coverPngInputPath)) {
     $coverJpgInputPath = $coverPngInputPath
 }
 Ensure-Path -Path $coverJpgInputPath -Label 'Step 2 output - cover.jpg or cover.png'
-Ensure-Path -Path $coverPdfInputPath -Label 'Step 2 output - cover.pdf'
 Ensure-Path -Path $MetadataFile -Label 'MetadataFile'
 Ensure-Path -Path $StyleFile -Label 'StyleFile'
 
@@ -749,17 +747,6 @@ try {
             "--print-to-pdf=$pdfDest",
             $htmlUrl
         )
-
-        # Prepend cover.pdf if available
-        if (Test-Path $coverPdfInputPath) {
-            Write-Host 'Step 3 - Merging cover PDF...' -ForegroundColor Cyan
-            $mergePdfScript = Join-Path $scriptsDir 'merge-pdfs.mjs'
-            $contentOnlyPdf = $pdfDest + '.content.pdf'
-            Move-Item -Path $pdfDest -Destination $contentOnlyPdf -Force
-            & node $mergePdfScript $coverPdfInputPath $contentOnlyPdf $pdfDest
-            if ($LASTEXITCODE -ne 0) { throw "PDF merge failed (exit $LASTEXITCODE)" }
-            Remove-Item -Path $contentOnlyPdf -Force
-        }
 
         $copiedArtifacts.Add($pdfDest)
         Write-Host "OUTPUT: $pdfDest" -ForegroundColor Green

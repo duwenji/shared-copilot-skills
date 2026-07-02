@@ -8,7 +8,7 @@
 #
 #   step2 — Generate cover artwork
 #            INPUT : cover markdown / cover template, metadata.yaml
-#            OUTPUT: ebook-output/cover.pdf, ebook-output/cover.jpg
+#            OUTPUT: ebook-output/cover.jpg
 #
 #   step3 — Render Mermaid diagrams and produce final ebook files
 #            INPUT : step1 + step2 outputs, metadata.yaml
@@ -23,7 +23,7 @@ param(
     [string]$ConfigFile,
 
     [Parameter(Mandatory = $true)]
-    [ValidateSet('step1', 'step2', 'step3')]
+    [ValidateSet('step1', 'step2', 'step2b', 'step3')]
     [string]$BuildStep,
 
     [switch]$Force
@@ -167,6 +167,9 @@ $coverImageSizeValue               = Get-ConfigValue -Config $config -Name 'cove
 $coverImagePromptFileValue         = Get-ConfigValue -Config $config -Name 'coverImagePromptFile'
 $coverImagePromptSourceFileValue   = Get-ConfigValue -Config $config -Name 'coverImagePromptSourceFile'
 $coverImageFormatValue             = Get-ConfigValue -Config $config -Name 'coverImageFormat'
+$paperbackBackColorValue           = Get-ConfigValue -Config $config -Name 'paperbackBackColor'
+$paperbackSpineColorValue          = Get-ConfigValue -Config $config -Name 'paperbackSpineColor'
+$paperbackFontPathValue            = Get-ConfigValue -Config $config -Name 'paperbackFontPath'
 
 # ---------------------------------------------------------------------------
 # Resolve effective values (config → sensible defaults)
@@ -237,6 +240,9 @@ $coverImageSize       = [string]$(if ($coverImageSizeValue)       { $coverImageS
 $coverImagePromptFile       = Resolve-ConfiguredPath -BasePath $RepoRoot -Value $coverImagePromptFileValue
 $coverImagePromptSourceFile = Resolve-ConfiguredPath -BasePath $RepoRoot -Value $coverImagePromptSourceFileValue
 $coverImageFormat           = [string]$(if ($coverImageFormatValue) { $coverImageFormatValue } else { 'jpg' })
+$paperbackBackColor         = [string]$(if ($paperbackBackColorValue)  { $paperbackBackColorValue }  else { '#0b1220' })
+$paperbackSpineColor        = [string]$(if ($paperbackSpineColorValue) { $paperbackSpineColorValue } else { '' })
+$paperbackFontPath          = Resolve-ConfiguredPath -BasePath $RepoRoot -Value $paperbackFontPathValue
 
 Write-Host "Resolved configuration values:" -ForegroundColor Green
 Write-Host "  projectName: $projectName"
@@ -386,8 +392,8 @@ switch ($BuildStep) {
 
     'step2' {
         # INPUT : cover source (markdown or AI prompt), metadata.yaml
-        # OUTPUT: $outputDir/cover.png + cover.pdf  (ai-image mode)
-        #         $outputDir/cover.jpg + cover.pdf  (markdown mode)
+        # OUTPUT: $outputDir/cover.png  (ai-image mode)
+        #         $outputDir/cover.jpg  (markdown mode)
 
         # --- up-to-date check ---
         $step2Inputs = @($metadataFile, $coverStyleFile)
@@ -399,9 +405,8 @@ switch ($BuildStep) {
 
         $coverPng = Join-Path $outputDir 'cover.png'
         $coverJpg = Join-Path $outputDir 'cover.jpg'
-        $coverPdf = Join-Path $outputDir 'cover.pdf'
         $existingCover = if (Test-Path $coverPng) { $coverPng } else { $coverJpg }
-        $step2Outputs = @($coverPdf, $existingCover)
+        $step2Outputs = @($existingCover)
 
         if (-not $Force -and (Test-StepUpToDate -Inputs $step2Inputs -Outputs $step2Outputs)) {
             Write-Host "[step2] cover files are up-to-date — skipping (use -Force to rebuild)" -ForegroundColor Yellow
@@ -450,6 +455,31 @@ switch ($BuildStep) {
 
         & pwsh -NoProfile -ExecutionPolicy Bypass -File $script @step2Params
         if ($LASTEXITCODE -ne 0) { throw "Step 2 failed with exit code $LASTEXITCODE" }
+    }
+
+    'step2b' {
+        # INPUT : ebook-output/cover.jpg + ebook-output/$projectName.pdf (from step3)
+        #         kdp.yaml (trimSize, paperType)
+        # OUTPUT: ebook-output/paperback-cover.pdf
+
+        if (-not $kdpMetadataFile) {
+            throw "kdpMetadataFile is required for step2b. Set it in your build.json."
+        }
+
+        $script = Join-Path $scriptsDir 'invoke-ebook-step2b-paperback-cover.ps1'
+        $step2bParams = @{
+            OutputDir      = $outputDir
+            ProjectName    = $projectName
+            MetadataFile   = $metadataFile
+            KdpMetadataFile = $kdpMetadataFile
+            BackColor      = $paperbackBackColor
+        }
+        if ($paperbackSpineColor) { $step2bParams.SpineColor = $paperbackSpineColor }
+        if ($paperbackFontPath)   { $step2bParams.FontPath   = $paperbackFontPath }
+        if ($preserveTemp)        { $step2bParams.PreserveTemp = $true }
+
+        & pwsh -NoProfile -ExecutionPolicy Bypass -File $script @step2bParams
+        if ($LASTEXITCODE -ne 0) { throw "Step 2b failed with exit code $LASTEXITCODE" }
     }
 
     'step3' {

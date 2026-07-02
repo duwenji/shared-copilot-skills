@@ -1,8 +1,8 @@
 <#
 .SYNOPSIS
   Step 2 - Generate cover artwork.
-  CoverMode "markdown" (default): pandoc + headless browser → cover.jpg + cover.pdf
-  CoverMode "ai-image"          : baoyu-image-gen → cover.png + cover.pdf
+  CoverMode "markdown" (default): pandoc + headless browser → cover.jpg
+  CoverMode "ai-image"          : baoyu-image-gen → cover.png
 #>
 param(
     [string]$RepoRoot,
@@ -244,14 +244,13 @@ if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
 }
 
 # ---------------------------------------------------------------------------
-# ai-image mode: baoyu-image-gen → cover.png + cover.pdf
+# ai-image mode: baoyu-image-gen → cover.png
 # ---------------------------------------------------------------------------
 
 if ($CoverMode -eq 'ai-image') {
 
     $coverExt = if ($CoverImageFormat -eq 'jpg' -or $CoverImageFormat -eq 'jpeg') { 'jpg' } else { 'png' }
     $coverPng = Join-Path $OutputDir "cover.$coverExt"
-    $coverPdf = Join-Path $OutputDir 'cover.pdf'
 
     # Validate API key for known providers
     $providerKeyMap = @{
@@ -325,32 +324,15 @@ if ($CoverMode -eq 'ai-image') {
     }
     if ($LASTEXITCODE -ne 0) { throw "cover.$coverExt generation failed (exit $LASTEXITCODE)" }
 
-    Write-Host "`n=== Step 2 (ai-image): Convert $($coverExt.ToUpper()) -> PDF ===" -ForegroundColor Cyan
-    Write-Host "  Output   : $coverPdf"
-
-    $scriptsDir      = $PSScriptRoot
-    $pngToPdfScript  = Join-Path $scriptsDir 'png-to-pdf.mjs'
-    $pdfLibInShared  = Join-Path $scriptsDir 'node_modules\pdf-lib'
-
-    if (-not (Test-Path $pdfLibInShared)) {
-        Write-Host "  Installing pdf-lib in shared scripts..."
-        Push-Location $scriptsDir
-        try { npm install --silent } finally { Pop-Location }
-    }
-
-    & node $pngToPdfScript $coverPng $coverPdf
-    if ($LASTEXITCODE -ne 0) { throw "PNG->PDF conversion failed (exit $LASTEXITCODE)" }
-
     if ($coverExt -eq 'jpg') {
         Convert-ImageToRgbJpg -Path $coverPng
     }
 
     Write-Host "`nOUTPUT: $coverPng" -ForegroundColor Green
-    Write-Host "OUTPUT: $coverPdf"   -ForegroundColor Green
     Write-Host 'Step 2 complete. Run Step 3 to finalize the ebook.' -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-# markdown mode (default): pandoc + headless browser → cover.jpg + cover.pdf
+# markdown mode (default): pandoc + headless browser → cover.jpg
 # ---------------------------------------------------------------------------
 
 } else {
@@ -404,7 +386,6 @@ if ($CoverMode -eq 'ai-image') {
 
         $coverHtml = Join-Path $tempRoot "$ProjectName.cover.html"
         $coverJpg  = Join-Path $OutputDir 'cover.jpg'
-        $coverPdf  = Join-Path $OutputDir 'cover.pdf'
 
         Push-Location (Split-Path -Parent $effectiveCoverPath)
         try {
@@ -439,15 +420,6 @@ if ($CoverMode -eq 'ai-image') {
 
         Convert-ImageToRgbJpg -Path $coverJpg
 
-        Invoke-HeadlessBrowser -Browser $browser -ExpectedOutput $coverPdf -Arguments @(
-            '--headless=new', '--disable-gpu', '--allow-file-access-from-files',
-            '--run-all-compositor-stages-before-draw', '--virtual-time-budget=3000',
-            '--no-first-run', '--no-default-browser-check',
-            '--print-to-pdf-no-header', '--no-pdf-header-footer',
-            "--print-to-pdf=$coverPdf", $coverUrl
-        )
-
-        Write-Host "OUTPUT: $coverPdf" -ForegroundColor Green
         Write-Host "OUTPUT: $coverJpg" -ForegroundColor Green
         Write-Host 'Step 2 complete. Run Step 3 to finalize the ebook.' -ForegroundColor Green
     }
